@@ -17,9 +17,21 @@ esphome:
       # 3. Petit delai tampon
       - delay: 5s
 
-      # 4. Decision
+      # 4. Recuperer l'etat debug depuis HA
       - lambda: |-
-          // On verifie D'ABORD si on a bien recu une info valide de HA
+          if (id(ha_debug_mode).has_state()) {
+            id(debug_mode) = id(ha_debug_mode).state;
+          }
+
+      # 5. Decision
+      - lambda: |-
+          // Mode DEBUG : pas de deep sleep, on reste eveille
+          if (id(debug_mode)) {
+            ESP_LOGW("custom", "Mode DEBUG — deep sleep DESACTIVE, reste eveille.");
+            return;
+          }
+
+          // Mode PRODUCTION : logique normale
           if (id(ha_sleep_status).has_state()) {
 
             if (id(ha_sleep_status).state) {
@@ -92,6 +104,9 @@ globals:
   - id: last_gps_update
     type: uint32_t
     initial_value: '0'
+  - id: debug_mode
+    type: bool
+    initial_value: 'false'
 
 # ---------------------------------------------------------
 # LECTURE DE L'ETAT DEPUIS HOME ASSISTANT
@@ -102,6 +117,25 @@ binary_sensor:
     entity_id: input_boolean.mode_veille_gps_van
     id: ha_sleep_status
     internal: true
+
+  - platform: homeassistant
+    name: "HA Debug Mode"
+    entity_id: input_boolean.debug_mode_gps_van
+    id: ha_debug_mode
+    internal: true
+    on_state:
+      then:
+        - lambda: |-
+            id(debug_mode) = id(ha_debug_mode).state;
+            if (id(debug_mode)) {
+              ESP_LOGW("custom", "Mode DEBUG active — deep sleep desactive, logs VERBOSE");
+              esp_log_level_set("custom", ESP_LOG_VERBOSE);
+              esp_log_level_set("gps", ESP_LOG_VERBOSE);
+            } else {
+              ESP_LOGW("custom", "Mode PRODUCTION actif — optimisation energie");
+              esp_log_level_set("custom", ESP_LOG_WARN);
+              esp_log_level_set("gps", ESP_LOG_WARN);
+            }
 
   - platform: template
     name: "GPS Status"
@@ -193,6 +227,24 @@ sensor:
     name: "GPS Uptime"
     icon: "mdi:clock-outline"
 
+  # ---------------------------------------------------------
+  # CAPTEURS DEBUG (utiles uniquement en mode debug)
+  # ---------------------------------------------------------
+  - platform: wifi_signal
+    name: "GPS WiFi Signal"
+    id: wifi_signal_sensor
+    icon: "mdi:wifi"
+    update_interval: 10s
+
+  - platform: template
+    name: "GPS Free Heap"
+    id: free_heap_sensor
+    icon: "mdi:memory"
+    lambda: |-
+      return ESP.getFreeHeap() / 1024.0;
+    update_interval: 10s
+    unit_of_measurement: "kB"
+
   # Sensor batterie optionnel — necessite un diviseur de tension sur GPIO34
   # Formule: V_batt = ADC_value * (R1+R2)/R2 * 3.3 / 4095
   # Exemple diviseur 100k/100k: multiplier = 2.0
@@ -269,7 +321,11 @@ interval:
     then:
       - lambda: |-
           if (std::isnan(id(int_lat).state)) return;
-          if (millis() - id(last_gps_update) < (id(gps_interval).state * 1000)) return;
+
+          // En mode debug : publier toutes les secondes (pas de throttle)
+          // En mode production : respecter l'intervalle du slider
+          uint32_t min_interval = id(debug_mode) ? 1000 : (id(gps_interval).state * 1000);
+          if (millis() - id(last_gps_update) < min_interval) return;
 
           if (!std::isnan(id(int_lat).state)) id(public_lat).publish_state(id(int_lat).state);
           if (!std::isnan(id(int_lon).state)) id(public_lon).publish_state(id(int_lon).state);
