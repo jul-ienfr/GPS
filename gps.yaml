@@ -55,6 +55,7 @@ preferences:
   flash_write_interval: 1min
 
 logger:
+  level: WARN
 
 api:
   encryption:
@@ -67,6 +68,9 @@ ota:
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
+  fast_connect: true
+  output_power: 14dBm
+  power_save_mode: VERY_LIGHT
 
   ap:
     ssid: "Gps Fallback Hotspot"
@@ -74,9 +78,15 @@ wifi:
 
 captive_portal:
 
+safe_mode:
+
 deep_sleep:
   id: deep_sleep_component
   sleep_duration: 60min
+  wakeup_pin:
+    number: GPIO4
+    mode: INPUT_PULLUP
+    inverted: true
 
 globals:
   - id: last_gps_update
@@ -166,6 +176,38 @@ sensor:
     accuracy_decimals: 0
     icon: "mdi:satellite-variant"
 
+  - platform: template
+    name: "GPS HDOP"
+    id: public_hdop
+    accuracy_decimals: 2
+    icon: "mdi:crosshairs-gps"
+
+  - platform: template
+    name: "GPS Direction"
+    id: public_course
+    unit_of_measurement: "°"
+    accuracy_decimals: 0
+    icon: "mdi:compass"
+
+  - platform: uptime
+    name: "GPS Uptime"
+    icon: "mdi:clock-outline"
+
+  # Sensor batterie optionnel — necessite un diviseur de tension sur GPIO34
+  # Formule: V_batt = ADC_value * (R1+R2)/R2 * 3.3 / 4095
+  # Exemple diviseur 100k/100k: multiplier = 2.0
+  # - platform: adc
+  #   name: "GPS Battery Voltage"
+  #   id: batt_voltage
+  #   pin: GPIO34
+  #   attenuation: 11dB
+  #   update_interval: 60s
+  #   filters:
+  #     - multiply: 2.0  # adapter selon diviseur de tension
+  #   unit_of_measurement: "V"
+  #   accuracy_decimals: 2
+  #   icon: "mdi:battery"
+
 # ---------------------------------------------------------
 # CONFIGURATION MATERIELLE GPS
 # ---------------------------------------------------------
@@ -178,7 +220,7 @@ uart:
 gps:
   uart_id: uart_bus
   id: internal_gps
-  update_interval: 5s
+  update_interval: 1s
 
   latitude:
     name: "Internal Latitude"
@@ -209,6 +251,15 @@ gps:
     name: "Internal Satellites"
     id: int_sats
     internal: true
+  hdop:
+    name: "GPS HDOP"
+    id: int_hdop
+    internal: true
+  course:
+    name: "GPS Course"
+    id: int_course
+    internal: true
+    unit_of_measurement: "°"
 
 # ---------------------------------------------------------
 # LOGIQUE D'ENVOI (throttle dynamique via slider)
@@ -225,4 +276,6 @@ interval:
           if (!std::isnan(id(int_alt).state)) id(public_alt).publish_state(id(int_alt).state);
           if (!std::isnan(id(int_speed).state)) id(public_speed).publish_state(id(int_speed).state);
           if (!std::isnan(id(int_sats).state)) id(public_sats).publish_state(id(int_sats).state);
+          if (!std::isnan(id(int_hdop).state)) id(public_hdop).publish_state(id(int_hdop).state);
+          if (!std::isnan(id(int_course).state)) id(public_course).publish_state(id(int_course).state);
           id(last_gps_update) = millis();
