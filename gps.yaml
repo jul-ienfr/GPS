@@ -83,6 +83,8 @@ wifi:
   fast_connect: true
   output_power: 14dBm
   power_save_mode: VERY_LIGHT
+  # Note: en mode debug, le WiFi reste en mode eco (14dBm, VERY_LIGHT)
+  # pour eviter les problemes de connexion. Seul le deep sleep est desactive.
 
   ap:
     ssid: "Gps Fallback Hotspot"

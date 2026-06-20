@@ -174,13 +174,7 @@ Le tracker supporte deux modes opératoires, commutables depuis Home Assistant.
 
 ### Créer l'input boolean de debug
 
-```yaml
-# Ajouter dans configuration.yaml de HA
-input_boolean:
-  debug_mode_gps_van:
-    name: "Debug Mode GPS Van"
-    icon: mdi:bug
-```
+Le fichier `ha_configuration.yaml` contient les deux input booleans nécessaires. Copier son contenu dans `configuration.yaml` de HA :
 
 ### Comparaison des modes
 
@@ -189,8 +183,6 @@ input_boolean:
 | **Deep sleep** | Désactivé (reste éveillé) | Activé (1-240 min configurable) |
 | **Intervalle GPS** | 1 seconde (pas de throttle) | 5-600s (configurable via slider) |
 | **Logger level** | VERBOSE (tout détaillé) | WARN (erreurs uniquement) |
-| **WiFi power** | Normal (20dBm) | Réduit (14dBm) |
-| **WiFi power_save** | NONE | VERY_LIGHT |
 | **Capteurs debug** | WiFi Signal, Free Heap | Cachés |
 | **Usage** | Développement, test, dépannage | Utilisation en van |
 
@@ -272,13 +264,16 @@ Vérifier que les données GPS apparaissent (Latitude, Longitude, Satellites).
 2. Entrer l'IP de l'ESP32 (trouvé dans le dashboard ESPHome)
 3. Saisir la clé API (`api_encryption_key` de secrets.yaml)
 
-#### Étape 6 : Créer l'input boolean
-Dans `configuration.yaml` de HA :
+#### Étape 6 : Créer les input booleans dans HA
+Copier le contenu de `ha_configuration.yaml` dans `configuration.yaml` de Home Assistant, ou ajouter manuellement :
 ```yaml
 input_boolean:
   mode_veille_gps_van:
     name: "Mode Veille GPS Van"
     icon: mdi:sleep
+  debug_mode_gps_van:
+    name: "Debug Mode GPS Van"
+    icon: mdi:bug
 ```
 
 ### Contrôles HA
@@ -311,6 +306,7 @@ input_boolean:
 ```
 GPS/
 ├── gps.yaml              # Config ESPHome du tracker GPS
+├── ha_configuration.yaml # Entités HA à copier dans configuration.yaml
 ├── secrets.yaml          # ⚠️ NE PAS COMMITTER — credentials
 ├── secrets.yaml.example  # Template pour les contributeurs
 ├── README.md             # Ce fichier

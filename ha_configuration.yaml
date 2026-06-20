@@ -1,0 +1,15 @@
+# ---------------------------------------------------------
+# GPS Van Tracker — Entités à ajouter dans configuration.yaml
+# de Home Assistant
+# ---------------------------------------------------------
+
+# Input boolean pour controler le mode veille du GPS
+input_boolean:
+  mode_veille_gps_van:
+    name: "Mode Veille GPS Van"
+    icon: mdi:sleep
+
+# Input boolean pour activer le mode debug du GPS
+  debug_mode_gps_van:
+    name: "Debug Mode GPS Van"
+    icon: mdi:bug
