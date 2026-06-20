@@ -1,0 +1,144 @@
+# ---------------------------------------------------------
+# GPS Van Tracker — Dashboard Lovelace
+# ---------------------------------------------------------
+# Pour importer ce dashboard dans HA :
+#   1. Aller dans Paramètres → Dashboards
+#   2. Créer un nouveau dashboard (ou éditer un existant)
+#   3. Cliquer sur l'icône YAML (3 points → Raw config editor)
+#   4. Coller le contenu de ce fichier
+# ---------------------------------------------------------
+
+title: GPS Van
+views:
+  - title: Tracker
+    path: gps-van
+    icon: mdi:map-marker-radius
+    type: sections
+    sections:
+      # ===== CARTE =====
+      - type: grid
+        column_span: 2
+        cards:
+          - type: map
+            title: "📍 Position Van"
+            entities:
+              - entity: device_tracker.gps
+                name: Van
+            aspect_ratio: "16:9"
+            default_zoom: 15
+            dark_mode: true
+
+      # ===== DONNÉES GPS =====
+      - type: grid
+        column_span: 1
+        cards:
+          - type: entities
+            title: "🛰️ Données GPS"
+            entities:
+              - entity: sensor.van_latitude
+                name: Latitude
+                icon: mdi:latitude
+              - entity: sensor.van_longitude
+                name: Longitude
+                icon: mdi:longitude
+              - entity: sensor.van_altitude
+                name: Altitude
+                icon: mdi:altimeter
+              - entity: sensor.van_speed
+                name: Vitesse
+                icon: mdi:speedometer
+              - entity: sensor.gps_direction
+                name: Direction
+                icon: mdi:compass
+              - entity: sensor.gps_satellites
+                name: Satellites
+                icon: mdi:satellite-variant
+              - entity: sensor.gps_hdop
+                name: Précision (HDOP)
+                icon: mdi:crosshairs-gps
+
+      # ===== ÉTAT & CONTROLES =====
+      - type: grid
+        column_span: 1
+        cards:
+          - type: entities
+            title: "⚙️ Contrôles"
+            entities:
+              - entity: input_boolean.mode_veille_gps_van
+                name: Mode Veille
+                icon: mdi:sleep
+              - entity: input_boolean.debug_mode_gps_van
+                name: Mode Debug
+                icon: mdi:bug
+              - type: divider
+              - entity: number.gps_update_interval
+                name: Intervalle publication
+                icon: mdi:timer-sand
+              - entity: number.sleep_duration
+                name: Durée deep sleep
+                icon: mdi:timer-sleep
+
+          - type: glance
+            title: "📊 État"
+            entities:
+              - entity: binary_sensor.gps_status
+                name: GPS
+                icon: mdi:satellite-variant
+              - entity: sensor.gps_uptime
+                name: Uptime
+                icon: mdi:clock-outline
+              - entity: binary_sensor.ha_sleep_status
+                name: Veille HA
+                icon: mdi:sleep
+              - entity: binary_sensor.ha_debug_mode
+                name: Debug HA
+                icon: mdi:bug
+
+      # ===== DEBUG =====
+      - type: grid
+        column_span: 2
+        cards:
+          - type: entities
+            title: "🐛 Debug (mode debug uniquement)"
+            entities:
+              - entity: sensor.gps_wifi_signal
+                name: Signal WiFi
+                icon: mdi:wifi
+              - entity: sensor.gps_free_heap
+                name: Mémoire libre
+                icon: mdi:memory
+
+  - title: Historique
+    path: history
+    icon: mdi:history
+    type: sections
+    sections:
+      - type: grid
+        column_span: 2
+        cards:
+          - type: history-graph
+            title: "📈 Position (24h)"
+            entities:
+              - entity: sensor.van_latitude
+                name: Latitude
+              - entity: sensor.van_longitude
+                name: Longitude
+            hours_to_show: 24
+
+          - type: history-graph
+            title: "📈 Vitesse & Altitude (24h)"
+            entities:
+              - entity: sensor.van_speed
+                name: Vitesse (km/h)
+              - entity: sensor.van_altitude
+                name: Altitude (m)
+            hours_to_show: 24
+
+          - type: history-graph
+            title: "📈 Satellites & HDOP (24h)"
+            entities:
+              - entity: sensor.gps_satellites
+                name: Satellites
+              - entity: sensor.gps_hdop
+                name: HDOP
+            hours_to_show: 24

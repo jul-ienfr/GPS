@@ -276,6 +276,19 @@ input_boolean:
     icon: mdi:bug
 ```
 
+#### Étape 7 : Importer le dashboard
+1. Paramètres → Dashboards → Créer un dashboard
+2. Cliquer sur l'icône **三点 menu** → **Raw config editor**
+3. Coller le contenu de `ha_dashboard.yaml`
+4. Sauvegarder
+
+Le dashboard contient :
+- **Carte GPS** en temps réel
+- **Données GPS** (lat, lon, vitesse, altitude, satellites, HDOP)
+- **Contrôles** (mode veille, mode debug, sliders)
+- **État** (GPS OK, uptime, veille HA)
+- **Onglet Historique** (graphiques 24h)
+
 ### Contrôles HA
 
 | Entité | Type | Description |
@@ -307,6 +320,7 @@ input_boolean:
 GPS/
 ├── gps.yaml              # Config ESPHome du tracker GPS
 ├── ha_configuration.yaml # Entités HA à copier dans configuration.yaml
+├── ha_dashboard.yaml     # Dashboard Lovelace à importer dans HA
 ├── secrets.yaml          # ⚠️ NE PAS COMMITTER — credentials
 ├── secrets.yaml.example  # Template pour les contributeurs
 ├── README.md             # Ce fichier
