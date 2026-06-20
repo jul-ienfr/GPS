@@ -1,0 +1,228 @@
+esphome:
+  name: gps
+  friendly_name: GPS
+
+  on_boot:
+    priority: -100
+    then:
+      # 1. Securite Flash : On attend 30s pour permettre le flash OTA
+      - delay: 30s
+
+      # 2. On attend la connexion API (max 60s)
+      - wait_until:
+          condition:
+            api.connected:
+          timeout: 60s
+
+      # 3. Petit delai tampon
+      - delay: 5s
+
+      # 4. Decision
+      - lambda: |-
+          // On verifie D'ABORD si on a bien recu une info valide de HA
+          if (id(ha_sleep_status).has_state()) {
+
+            if (id(ha_sleep_status).state) {
+              ESP_LOGD("custom", "Ordre HA recu : Mode Veille est ON. Passage en Deep Sleep.");
+              uint32_t duration = id(sleep_duration_minutes).state * 60 * 1000;
+              id(deep_sleep_component).set_sleep_duration(duration);
+              id(deep_sleep_component).begin_sleep();
+            } else {
+              ESP_LOGD("custom", "Ordre HA recu : Mode Veille est OFF. On reste eveille.");
+            }
+
+          } else {
+            // Si on n'a pas reussi a joindre HA, on attend encore 30s puis on force le deep sleep
+            // pour eviter une decharge batterie si HA reste injoignable
+            ESP_LOGW("custom", "Pas de connexion HA ! Attente 30s supplementaires...");
+            delay(30000);
+
+            if (!id(ha_sleep_status).has_state() || !id(ha_sleep_status).state) {
+              ESP_LOGW("custom", "HA toujours injoignable. Deep sleep force par securite.");
+              uint32_t duration = id(sleep_duration_minutes).state * 60 * 1000;
+              id(deep_sleep_component).set_sleep_duration(duration);
+              id(deep_sleep_component).begin_sleep();
+            }
+          }
+
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+
+# Sauvegarde des reglages
+preferences:
+  flash_write_interval: 1min
+
+logger:
+
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  ap:
+    ssid: "Gps Fallback Hotspot"
+    password: !secret fallback_password
+
+captive_portal:
+
+deep_sleep:
+  id: deep_sleep_component
+  sleep_duration: 60min
+
+globals:
+  - id: last_gps_update
+    type: uint32_t
+    initial_value: '0'
+
+# ---------------------------------------------------------
+# LECTURE DE L'ETAT DEPUIS HOME ASSISTANT
+# ---------------------------------------------------------
+binary_sensor:
+  - platform: homeassistant
+    name: "HA Sleep Status"
+    entity_id: input_boolean.mode_veille_gps_van
+    id: ha_sleep_status
+    internal: true
+
+  - platform: template
+    name: "GPS Status"
+    icon: "mdi:satellite-variant"
+    lambda: |-
+      if (std::isnan(id(int_lat).state)) return false;
+      return true;
+
+# ---------------------------------------------------------
+# CURSEURS DE REGLAGE (Avec memoire)
+# ---------------------------------------------------------
+number:
+  - platform: template
+    name: "GPS Update Interval"
+    id: gps_interval
+    optimistic: true
+    min_value: 5
+    max_value: 600
+    step: 5
+    initial_value: 10
+    unit_of_measurement: "s"
+    mode: slider
+    icon: "mdi:timer-sand"
+    restore_value: true
+
+  - platform: template
+    name: "Sleep Duration"
+    id: sleep_duration_minutes
+    optimistic: true
+    min_value: 1
+    max_value: 240
+    step: 1
+    initial_value: 30
+    unit_of_measurement: "min"
+    mode: slider
+    icon: "mdi:timer-sleep"
+    restore_value: true
+
+# ---------------------------------------------------------
+# CAPTEURS PUBLICS (relais depuis GPS interne)
+# ---------------------------------------------------------
+sensor:
+  - platform: template
+    name: "Van Latitude"
+    id: public_lat
+    accuracy_decimals: 6
+    icon: "mdi:latitude"
+
+  - platform: template
+    name: "Van Longitude"
+    id: public_lon
+    accuracy_decimals: 6
+    icon: "mdi:longitude"
+
+  - platform: template
+    name: "Van Altitude"
+    id: public_alt
+    unit_of_measurement: "m"
+    accuracy_decimals: 1
+    icon: "mdi:altimeter"
+
+  - platform: template
+    name: "Van Speed"
+    id: public_speed
+    unit_of_measurement: "km/h"
+    accuracy_decimals: 1
+    icon: "mdi:speedometer"
+
+  - platform: template
+    name: "GPS Satellites"
+    id: public_sats
+    accuracy_decimals: 0
+    icon: "mdi:satellite-variant"
+
+# ---------------------------------------------------------
+# CONFIGURATION MATERIELLE GPS
+# ---------------------------------------------------------
+uart:
+  rx_pin: 22
+  tx_pin: 23
+  baud_rate: 9600
+  id: uart_bus
+
+gps:
+  uart_id: uart_bus
+  id: internal_gps
+  update_interval: 5s
+
+  latitude:
+    name: "Internal Latitude"
+    id: int_lat
+    internal: true
+    filters:
+      - delta: 0.00001  # ~1 meter — ignore GPS jitter
+  longitude:
+    name: "Internal Longitude"
+    id: int_lon
+    internal: true
+    filters:
+      - delta: 0.00001  # ~1 meter — ignore GPS jitter
+  altitude:
+    name: "Internal Altitude"
+    id: int_alt
+    internal: true
+    filters:
+      - delta: 1.0  # ignore altitude fluctuations < 1m
+  speed:
+    name: "Internal Speed"
+    id: int_speed
+    internal: true
+    unit_of_measurement: "km/h"
+    filters:
+      - delta: 1.0  # ignore speed fluctuations < 1 km/h
+  satellites:
+    name: "Internal Satellites"
+    id: int_sats
+    internal: true
+
+# ---------------------------------------------------------
+# LOGIQUE D'ENVOI (throttle dynamique via slider)
+# ---------------------------------------------------------
+interval:
+  - interval: 1s
+    then:
+      - lambda: |-
+          if (std::isnan(id(int_lat).state)) return;
+          if (millis() - id(last_gps_update) < (id(gps_interval).state * 1000)) return;
+
+          if (!std::isnan(id(int_lat).state)) id(public_lat).publish_state(id(int_lat).state);
+          if (!std::isnan(id(int_lon).state)) id(public_lon).publish_state(id(int_lon).state);
+          if (!std::isnan(id(int_alt).state)) id(public_alt).publish_state(id(int_alt).state);
+          if (!std::isnan(id(int_speed).state)) id(public_speed).publish_state(id(int_speed).state);
+          if (!std::isnan(id(int_sats).state)) id(public_sats).publish_state(id(int_sats).state);
+          id(last_gps_update) = millis();
