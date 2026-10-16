@@ -9,10 +9,10 @@
 #  ⚠️  Toutes les entités sont préfixées par le nom de l'appareil ESPHome.
 #      Le nom est défini dans gps+jkbms.yaml :
 #          substitutions: device_name: gps-jkbms
-#      → les entités s'appellent donc sensor.gps_jkbms_van_latitude, etc.
+#      → les entités s'appellent donc sensor.gps_jk_bms_van_van_latitude, etc.
 #
 #      SI VOUS CHANGEZ `device_name`, il faut corriger TOUTES les entités
-#      de ce fichier (rechercher / remplacer « gps_jkbms_ »).
+#      de ce fichier (rechercher / remplacer « gps_jk_bms_van_ »).
 #
 #  L'ancienne carte pointait sur `device_tracker.gps`, une entité qui
 #  n'existait pas. Elle utilise maintenant `device_tracker.van`, fabriqué par
@@ -36,7 +36,7 @@ views:
           - type: map
             title: "📍 Position du van"
             entities:
-              - entity: device_tracker.van
+              - entity: device_tracker.van_gps_tracker
                 name: Van
             aspect_ratio: "16:9"
             default_zoom: 15
@@ -51,25 +51,25 @@ views:
             header: "GPS Satellites"
             show_header_toggle: false
             entities:
-              - entity: sensor.gps_jkbms_van_latitude
+              - entity: sensor.gps_jk_bms_van_van_latitude
                 name: Latitude
                 icon: mdi:latitude
-              - entity: sensor.gps_jkbms_van_longitude
+              - entity: sensor.gps_jk_bms_van_van_longitude
                 name: Longitude
                 icon: mdi:longitude
-              - entity: sensor.gps_jkbms_van_altitude
+              - entity: sensor.gps_jk_bms_van_van_altitude
                 name: Altitude
                 icon: mdi:altimeter
-              - entity: sensor.gps_jkbms_van_speed
+              - entity: sensor.gps_jk_bms_van_van_speed
                 name: Vitesse
                 icon: mdi:speedometer
-              - entity: sensor.gps_jkbms_gps_direction
+              - entity: sensor.gps_jk_bms_van_gps_direction
                 name: Direction
                 icon: mdi:compass
-              - entity: sensor.gps_jkbms_gps_satellites
+              - entity: sensor.gps_jk_bms_van_gps_satellites
                 name: Satellites
                 icon: mdi:satellite-variant
-              - entity: sensor.gps_jkbms_gps_hdop
+              - entity: sensor.gps_jk_bms_van_gps_hdop
                 name: Précision (HDOP)
                 icon: mdi:crosshairs-gps
 
@@ -80,25 +80,25 @@ views:
           - type: entities
             title: "🔋 Batterie"
             entities:
-              - entity: sensor.gps_jkbms_bms_state_of_charge
+              - entity: sensor.gps_jk_bms_van_bms_state_of_charge
                 name: Charge
-              - entity: sensor.gps_jkbms_bms_total_voltage
+              - entity: sensor.gps_jk_bms_van_bms_total_voltage
                 name: Tension pack
-              - entity: sensor.gps_jkbms_bms_current
+              - entity: sensor.gps_jk_bms_van_bms_current
                 name: Courant
-              - entity: sensor.gps_jkbms_bms_power
+              - entity: sensor.gps_jk_bms_van_bms_power
                 name: Puissance
               - type: divider
-              - entity: sensor.gps_jkbms_bms_delta_cell_voltage
+              - entity: sensor.gps_jk_bms_van_bms_delta_cell_voltage
                 name: "Écart mini/maxi cellules"
-              - entity: sensor.gps_jkbms_bms_temperature_1
+              - entity: sensor.gps_jk_bms_van_bms_temperature_1
                 name: Température 1
-              - entity: sensor.gps_jkbms_bms_temperature_2
+              - entity: sensor.gps_jk_bms_van_bms_temperature_2
                 name: Température 2
               - type: divider
-              - entity: binary_sensor.gps_jkbms_bms_online
+              - entity: binary_sensor.gps_jk_bms_van_bms_online
                 name: "BMS en ligne"
-              - entity: text_sensor.gps_jkbms_bms_errors
+              - entity: sensor.gps_jk_bms_van_bms_errors
                 name: Alarmes
 
       # ----- CONTRÔLES & ÉCONOMIE D'ÉNERGIE ---------------------------------
@@ -110,14 +110,14 @@ views:
             entities:
               - entity: input_boolean.mode_eco_gps_van
                 name: "Mode ÉCO (coupe le GPS et le BLE)"
-              - entity: switch.gps_jkbms_gps_power
+              - entity: switch.gps_jk_bms_van_gps_power
                 name: "Alimentation GPS"
-              - entity: switch.gps_jkbms_bms_bluetooth
+              - entity: switch.gps_jk_bms_van_bms_bluetooth
                 name: "Bluetooth BMS"
-              - entity: text_sensor.gps_jkbms_mode_eco
+              - entity: sensor.gps_jk_bms_van_mode_eco
                 name: "État"
               - type: divider
-              - entity: number.gps_jkbms_gps_update_interval
+              - entity: number.gps_jk_bms_van_gps_update_interval
                 name: "Publication GPS toutes les"
               - entity: input_boolean.debug_mode_gps_van
                 name: "Mode Debug (1 publication/s)"
@@ -125,57 +125,57 @@ views:
           - type: glance
             title: "📊 État du module"
             entities:
-              - entity: binary_sensor.gps_jkbms_gps_status
+              - entity: binary_sensor.gps_jk_bms_van_gps_status
                 name: GPS
-              - entity: binary_sensor.gps_jkbms_bms_balancing
+              - entity: binary_sensor.gps_jk_bms_van_bms_balancing
                 name: Équilibrage
-              - entity: binary_sensor.gps_jkbms_bms_charging
+              - entity: binary_sensor.gps_jk_bms_van_bms_charging
                 name: Charge
-              - entity: binary_sensor.gps_jkbms_bms_discharging
+              - entity: binary_sensor.gps_jk_bms_van_bms_discharging
                 name: Décharge
-              - entity: sensor.gps_jkbms_gps_uptime
+              - entity: sensor.gps_jk_bms_van_gps_uptime
                 name: Uptime
-              - entity: sensor.gps_jkbms_gps_wifi_signal
+              - entity: sensor.gps_jk_bms_van_gps_wifi_signal
                 name: WiFi
 
           - type: entities
             title: "⚙️ Commandes BMS (⚠️ écrivent dans le BMS)"
             entities:
-              - entity: switch.gps_jkbms_bms_display_always_on
+              - entity: switch.gps_jk_bms_van_bms_display_always_on
                 name: "Écran toujours allumé"
-              - entity: switch.gps_jkbms_bms_balancer
+              - entity: switch.gps_jk_bms_van_bms_balancer
                 name: "Équilibrage"
-              - entity: switch.gps_jkbms_bms_charging
+              - entity: switch.gps_jk_bms_van_bms_charging
                 name: "Charge autorisée"
-              - entity: switch.gps_jkbms_bms_discharging
+              - entity: switch.gps_jk_bms_van_bms_discharging
                 name: "Décharge autorisée"
               - type: divider
-              - entity: switch.gps_jkbms_bms_heating
+              - entity: switch.gps_jk_bms_van_bms_heating
                 name: "Chauffage"
-              - entity: switch.gps_jkbms_bms_emergency
+              - entity: switch.gps_jk_bms_van_bms_emergency
                 name: "Mode urgence"
-              - entity: switch.gps_jkbms_bms_charging_float_mode
+              - entity: switch.gps_jk_bms_van_bms_charging_float_mode
                 name: "Charge float"
-              - entity: switch.gps_jkbms_bms_smart_sleep
+              - entity: switch.gps_jk_bms_van_bms_smart_sleep
                 name: "Veille intelligente"
               - type: divider
-              - entity: select.gps_jkbms_bms_multiplexed_port_mode
+              - entity: select.gps_jk_bms_van_bms_multiplexed_port_mode
                 name: "Mode du port multiplexé"
-              - entity: select.gps_jkbms_bms_load_config_preset
+              - entity: select.gps_jk_bms_van_bms_load_config_preset
                 name: "Charger un préréglage"
               - type: divider
-              - entity: switch.gps_jkbms_bms_disable_temperature_sensors
+              - entity: switch.gps_jk_bms_van_bms_disable_temperature_sensors
                 name: "Désactiver sondes de température"
-              - entity: switch.gps_jkbms_bms_disable_pcl_module
+              - entity: switch.gps_jk_bms_van_bms_disable_pcl_module
                 name: "Désactiver module PCL"
-              - entity: switch.gps_jkbms_bms_timed_stored_data
+              - entity: switch.gps_jk_bms_van_bms_timed_stored_data
                 name: "Enregistrement périodique"
               - type: divider
-              - entity: button.gps_jkbms_bms_retrieve_settings
+              - entity: button.gps_jk_bms_van_bms_retrieve_settings
                 name: "Relire les réglages"
-              - entity: button.gps_jkbms_bms_retrieve_device_info
+              - entity: button.gps_jk_bms_van_bms_retrieve_device_info
                 name: "Relire les infos"
-              - entity: button.gps_jkbms_bms_retrieve_logbook
+              - entity: button.gps_jk_bms_van_bms_retrieve_logbook
                 name: "Relire le journal"
 
   # ===========================================================================
@@ -194,30 +194,30 @@ views:
             title: "🔋 Tension des cellules (pack 8S)"
             show_header_toggle: false
             entities:
-              - entity: sensor.gps_jkbms_bms_cell_voltage_1
+              - entity: sensor.gps_jk_bms_van_bms_cell_voltage_1
                 name: Cellule 1
-              - entity: sensor.gps_jkbms_bms_cell_voltage_2
+              - entity: sensor.gps_jk_bms_van_bms_cell_voltage_2
                 name: Cellule 2
-              - entity: sensor.gps_jkbms_bms_cell_voltage_3
+              - entity: sensor.gps_jk_bms_van_bms_cell_voltage_3
                 name: Cellule 3
-              - entity: sensor.gps_jkbms_bms_cell_voltage_4
+              - entity: sensor.gps_jk_bms_van_bms_cell_voltage_4
                 name: Cellule 4
-              - entity: sensor.gps_jkbms_bms_cell_voltage_5
+              - entity: sensor.gps_jk_bms_van_bms_cell_voltage_5
                 name: Cellule 5
-              - entity: sensor.gps_jkbms_bms_cell_voltage_6
+              - entity: sensor.gps_jk_bms_van_bms_cell_voltage_6
                 name: Cellule 6
-              - entity: sensor.gps_jkbms_bms_cell_voltage_7
+              - entity: sensor.gps_jk_bms_van_bms_cell_voltage_7
                 name: Cellule 7
-              - entity: sensor.gps_jkbms_bms_cell_voltage_8
+              - entity: sensor.gps_jk_bms_van_bms_cell_voltage_8
                 name: Cellule 8
               - type: divider
-              - entity: sensor.gps_jkbms_bms_min_cell_voltage
+              - entity: sensor.gps_jk_bms_van_bms_min_cell_voltage
                 name: Minimum
-              - entity: sensor.gps_jkbms_bms_max_cell_voltage
+              - entity: sensor.gps_jk_bms_van_bms_max_cell_voltage
                 name: Maximum
-              - entity: sensor.gps_jkbms_bms_average_cell_voltage
+              - entity: sensor.gps_jk_bms_van_bms_average_cell_voltage
                 name: Moyenne
-              - entity: sensor.gps_jkbms_bms_delta_cell_voltage
+              - entity: sensor.gps_jk_bms_van_bms_delta_cell_voltage
                 name: "Écart (mini - maxi)"
 
       # ----- CAPACITÉ / CYCLES ----------------------------------------------
@@ -227,39 +227,39 @@ views:
           - type: entities
             title: "⚡ Puissance"
             entities:
-              - entity: sensor.gps_jkbms_bms_total_voltage
+              - entity: sensor.gps_jk_bms_van_bms_total_voltage
                 name: Tension pack
-              - entity: sensor.gps_jkbms_bms_current
+              - entity: sensor.gps_jk_bms_van_bms_current
                 name: Courant
-              - entity: sensor.gps_jkbms_bms_power
+              - entity: sensor.gps_jk_bms_van_bms_power
                 name: Puissance
-              - entity: sensor.gps_jkbms_bms_state_of_charge
+              - entity: sensor.gps_jk_bms_van_bms_state_of_charge
                 name: Charge
-              - entity: sensor.gps_jkbms_bms_capacity_remaining
+              - entity: sensor.gps_jk_bms_van_bms_capacity_remaining
                 name: Capacité restante
-              - entity: sensor.gps_jkbms_bms_full_charge_capacity
+              - entity: sensor.gps_jk_bms_van_bms_full_charge_capacity
                 name: Capacité pleine charge
-              - entity: sensor.gps_jkbms_bms_balancing_current
+              - entity: sensor.gps_jk_bms_van_bms_balancing_current
                 name: Courant d'équilibrage
 
           - type: entities
             title: "🌡️ Températures"
             entities:
-              - entity: sensor.gps_jkbms_bms_temperature_1
+              - entity: sensor.gps_jk_bms_van_bms_temperature_1
                 name: "Capteur 1"
-              - entity: sensor.gps_jkbms_bms_temperature_2
+              - entity: sensor.gps_jk_bms_van_bms_temperature_2
                 name: "Capteur 2"
-              - entity: sensor.gps_jkbms_bms_mosfet_temperature
+              - entity: sensor.gps_jk_bms_van_bms_mosfet_temperature
                 name: "MOSFET"
 
           - type: entities
             title: "📅 Compteurs"
             entities:
-              - entity: sensor.gps_jkbms_bms_charging_cycles
+              - entity: sensor.gps_jk_bms_van_bms_charging_cycles
                 name: Cycles de charge
-              - entity: sensor.gps_jkbms_bms_total_cycle_capacity
+              - entity: sensor.gps_jk_bms_van_bms_total_cycle_capacity
                 name: Capacité cumulée
-              - entity: sensor.gps_jkbms_bms_total_runtime_hours
+              - entity: sensor.gps_jk_bms_van_bms_total_runtime_hours
                 name: Durée de fonctionnement
 
       # ----- IDENTIFICATION DU BMS ------------------------------------------
@@ -272,14 +272,14 @@ views:
 
               | | |
               |---|---|
-              | Modèle | `{{ states('text_sensor.gps_jkbms_bms_device_model') }}` |
-              | Hardware | `{{ states('text_sensor.gps_jkbms_bms_hardware_version') }}` |
-              | Software | `{{ states('text_sensor.gps_jkbms_bms_software_version') }}` |
-              | Numéro de série | `{{ states('text_sensor.gps_jkbms_bms_serial_number') }}` |
-              | Fabriqué le | `{{ states('text_sensor.gps_jkbms_bms_manufacturing_date') }}` |
+              | Modèle | `{{ states('sensor.gps_jk_bms_van_bms_device_model') }}` |
+              | Hardware | `{{ states('sensor.gps_jk_bms_van_bms_hardware_version') }}` |
+              | Software | `{{ states('sensor.gps_jk_bms_van_bms_software_version') }}` |
+              | Numéro de série | `{{ states('sensor.gps_jk_bms_van_bms_serial_number') }}` |
+              | Fabriqué le | `{{ states('sensor.gps_jk_bms_van_bms_manufacturing_date') }}` |
               | Protocole ESPHome | `JK02_32S` (hardware ≥ 11.0) |
-              | Équilibrage | `{{ states('text_sensor.gps_jkbms_bms_balancer_status') }}` |
-              | Alarmes | `{{ states('text_sensor.gps_jkbms_bms_errors') }}` |
+              | Équilibrage | `{{ states('sensor.gps_jk_bms_van_bms_balancer_status') }}` |
+              | Alarmes | `{{ states('sensor.gps_jk_bms_van_bms_errors') }}` |
 
   # ===========================================================================
   #  VUE 3 — RÉGLAGES BMS (⚠️ ÉCRIVENT DANS LE BMS)
@@ -298,71 +298,71 @@ views:
           - type: entities
             title: "⚠️ Protections de tension (⚠️ écrivent dans le BMS)"
             entities:
-              - entity: number.gps_jkbms_bms_cell_overvoltage_protection
+              - entity: number.gps_jk_bms_van_bms_cell_overvoltage_protection
                 name: "Survoltage cellule — seuil"
-              - entity: number.gps_jkbms_bms_cell_overvoltage_recovery
+              - entity: number.gps_jk_bms_van_bms_cell_overvoltage_recovery
                 name: "Survoltage cellule — reprise"
-              - entity: number.gps_jkbms_bms_cell_undervoltage_protection
+              - entity: number.gps_jk_bms_van_bms_cell_undervoltage_protection
                 name: "Sous-voltage cellule — seuil"
-              - entity: number.gps_jkbms_bms_cell_undervoltage_recovery
+              - entity: number.gps_jk_bms_van_bms_cell_undervoltage_recovery
                 name: "Sous-voltage cellule — reprise"
               - type: divider
-              - entity: number.gps_jkbms_bms_power_off_voltage
+              - entity: number.gps_jk_bms_van_bms_power_off_voltage
                 name: "Tension d'arrêt"
-              - entity: number.gps_jkbms_bms_cell_soc100_voltage
+              - entity: number.gps_jk_bms_van_bms_cell_soc100_voltage
                 name: "Tension cellule SOC 100 %"
-              - entity: number.gps_jkbms_bms_cell_soc0_voltage
+              - entity: number.gps_jk_bms_van_bms_cell_soc0_voltage
                 name: "Tension cellule SOC 0 %"
               - type: divider
-              - entity: number.gps_jkbms_bms_request_charge_voltage
+              - entity: number.gps_jk_bms_van_bms_request_charge_voltage
                 name: "Tension demande de charge"
-              - entity: number.gps_jkbms_bms_request_float_voltage
+              - entity: number.gps_jk_bms_van_bms_request_float_voltage
                 name: "Tension float"
 
           - type: entities
             title: "⚡ Courants max (⚠️ écrivent dans le BMS)"
             entities:
-              - entity: number.gps_jkbms_bms_max_charge_current
+              - entity: number.gps_jk_bms_van_bms_max_charge_current
                 name: "Charge max"
-              - entity: number.gps_jkbms_bms_max_discharge_current
+              - entity: number.gps_jk_bms_van_bms_max_discharge_current
                 name: "Décharge max"
-              - entity: number.gps_jkbms_bms_max_balance_current
+              - entity: number.gps_jk_bms_van_bms_max_balance_current
                 name: "Équilibrage max"
               - type: divider
-              - entity: number.gps_jkbms_bms_balance_trigger_voltage
+              - entity: number.gps_jk_bms_van_bms_balance_trigger_voltage
                 name: "Seuil de déclenchement équilibrage"
-              - entity: number.gps_jkbms_bms_balancing_start_voltage
+              - entity: number.gps_jk_bms_van_bms_balancing_start_voltage
                 name: "Tension de démarrage équilibrage"
               - type: divider
-              - entity: number.gps_jkbms_bms_cell_count
+              - entity: number.gps_jk_bms_van_bms_cell_count
                 name: "Nombre de cellules"
-              - entity: number.gps_jkbms_bms_total_battery_capacity
+              - entity: number.gps_jk_bms_van_bms_total_battery_capacity
                 name: "Capacité totale"
 
           - type: entities
             title: "🌡️ Protections de température (⚠️ écrivent dans le BMS)"
             entities:
-              - entity: number.gps_jkbms_bms_charge_overtemp_protection
+              - entity: number.gps_jk_bms_van_bms_charge_overtemp_protection
                 name: "Charge sur-temp — seuil"
-              - entity: number.gps_jkbms_bms_charge_overtemp_recovery
+              - entity: number.gps_jk_bms_van_bms_charge_overtemp_recovery
                 name: "Charge sur-temp — reprise"
-              - entity: number.gps_jkbms_bms_discharge_overtemp_protection
+              - entity: number.gps_jk_bms_van_bms_discharge_overtemp_protection
                 name: "Décharge sur-temp — seuil"
-              - entity: number.gps_jkbms_bms_discharge_overtemp_recovery
+              - entity: number.gps_jk_bms_van_bms_discharge_overtemp_recovery
                 name: "Décharge sur-temp — reprise"
               - type: divider
-              - entity: number.gps_jkbms_bms_charge_undertemp_protection
+              - entity: number.gps_jk_bms_van_bms_charge_undertemp_protection
                 name: "Charge sous-temp — seuil"
-              - entity: number.gps_jkbms_bms_charge_undertemp_recovery
+              - entity: number.gps_jk_bms_van_bms_charge_undertemp_recovery
                 name: "Charge sous-temp — reprise"
-              - entity: number.gps_jkbms_bms_discharge_undertemp_protection
+              - entity: number.gps_jk_bms_van_bms_discharge_undertemp_protection
                 name: "Décharge sous-temp — seuil"
-              - entity: number.gps_jkbms_bms_discharge_undertemp_recovery
+              - entity: number.gps_jk_bms_van_bms_discharge_undertemp_recovery
                 name: "Décharge sous-temp — reprise"
               - type: divider
-              - entity: number.gps_jkbms_bms_mosfet_overtemp_protection
+              - entity: number.gps_jk_bms_van_bms_mosfet_overtemp_protection
                 name: "MOSFET sur-temp — seuil"
-              - entity: number.gps_jkbms_bms_mosfet_overtemp_recovery
+              - entity: number.gps_jk_bms_van_bms_mosfet_overtemp_recovery
                 name: "MOSFET sur-temp — reprise"
 
       - type: grid
@@ -371,35 +371,35 @@ views:
           - type: entities
             title: "⏱️ Temporisations (⚠️ écrivent dans le BMS)"
             entities:
-              - entity: number.gps_jkbms_bms_charge_overcurrent_delay
+              - entity: number.gps_jk_bms_van_bms_charge_overcurrent_delay
                 name: "Surintensité charge — délai"
-              - entity: number.gps_jkbms_bms_charge_overcurrent_recovery
+              - entity: number.gps_jk_bms_van_bms_charge_overcurrent_recovery
                 name: "Surintensité charge — reprise"
-              - entity: number.gps_jkbms_bms_discharge_overcurrent_delay
+              - entity: number.gps_jk_bms_van_bms_discharge_overcurrent_delay
                 name: "Surintensité décharge — délai"
-              - entity: number.gps_jkbms_bms_discharge_overcurrent_recovery
+              - entity: number.gps_jk_bms_van_bms_discharge_overcurrent_recovery
                 name: "Surintensité décharge — reprise"
               - type: divider
-              - entity: number.gps_jkbms_bms_short_circuit_delay
+              - entity: number.gps_jk_bms_van_bms_short_circuit_delay
                 name: "Court-circuit — délai"
-              - entity: number.gps_jkbms_bms_short_circuit_recovery
+              - entity: number.gps_jk_bms_van_bms_short_circuit_recovery
                 name: "Court-circuit — reprise"
-              - entity: number.gps_jkbms_bms_discharge_precharge_time
+              - entity: number.gps_jk_bms_van_bms_discharge_precharge_time
                 name: "Précharge décharge"
 
           - type: entities
             title: "😴 Veille et urgence (⚠️ écrivent dans le BMS)"
             entities:
-              - entity: number.gps_jkbms_bms_smart_sleep_voltage
+              - entity: number.gps_jk_bms_van_bms_smart_sleep_voltage
                 name: "Tension veille intelligente"
-              - entity: number.gps_jkbms_bms_smart_sleep_delay
+              - entity: number.gps_jk_bms_van_bms_smart_sleep_delay
                 name: "Délai veille intelligente"
-              - entity: number.gps_jkbms_bms_emergency_duration
+              - entity: number.gps_jk_bms_van_bms_emergency_duration
                 name: "Durée mode urgence"
               - type: divider
-              - entity: number.gps_jkbms_bms_voltage_calibration
+              - entity: number.gps_jk_bms_van_bms_voltage_calibration
                 name: "Calibration tension"
-              - entity: number.gps_jkbms_bms_current_calibration
+              - entity: number.gps_jk_bms_van_bms_current_calibration
                 name: "Calibration courant"
 
   # ===========================================================================
@@ -416,54 +416,54 @@ views:
           - type: history-graph
             title: "📈 Charge de la batterie (24h)"
             entities:
-              - entity: sensor.gps_jkbms_bms_state_of_charge
+              - entity: sensor.gps_jk_bms_van_bms_state_of_charge
                 name: "Charge (%)"
             hours_to_show: 24
 
           - type: history-graph
             title: "📈 Tension & courant du pack (24h)"
             entities:
-              - entity: sensor.gps_jkbms_bms_total_voltage
+              - entity: sensor.gps_jk_bms_van_bms_total_voltage
                 name: "Tension (V)"
-              - entity: sensor.gps_jkbms_bms_current
+              - entity: sensor.gps_jk_bms_van_bms_current
                 name: "Courant (A)"
             hours_to_show: 24
 
           - type: history-graph
             title: "📈 Écart entre cellules (24h)"
             entities:
-              - entity: sensor.gps_jkbms_bms_delta_cell_voltage
+              - entity: sensor.gps_jk_bms_van_bms_delta_cell_voltage
                 name: "Écart (V)"
-              - entity: sensor.gps_jkbms_bms_max_cell_voltage
+              - entity: sensor.gps_jk_bms_van_bms_max_cell_voltage
                 name: "Max (V)"
-              - entity: sensor.gps_jkbms_bms_min_cell_voltage
+              - entity: sensor.gps_jk_bms_van_bms_min_cell_voltage
                 name: "Min (V)"
             hours_to_show: 24
 
           - type: history-graph
             title: "📈 Position (24h)"
             entities:
-              - entity: sensor.gps_jkbms_van_latitude
+              - entity: sensor.gps_jk_bms_van_van_latitude
                 name: Latitude
-              - entity: sensor.gps_jkbms_van_longitude
+              - entity: sensor.gps_jk_bms_van_van_longitude
                 name: Longitude
             hours_to_show: 24
 
           - type: history-graph
             title: "📈 Vitesse & altitude (24h)"
             entities:
-              - entity: sensor.gps_jkbms_van_speed
+              - entity: sensor.gps_jk_bms_van_van_speed
                 name: "Vitesse (km/h)"
-              - entity: sensor.gps_jkbms_van_altitude
+              - entity: sensor.gps_jk_bms_van_van_altitude
                 name: "Altitude (m)"
             hours_to_show: 24
 
           - type: history-graph
             title: "📈 Satellites & précision (24h)"
             entities:
-              - entity: sensor.gps_jkbms_gps_satellites
+              - entity: sensor.gps_jk_bms_van_gps_satellites
                 name: Satellites
-              - entity: sensor.gps_jkbms_gps_hdop
+              - entity: sensor.gps_jk_bms_van_gps_hdop
                 name: HDOP
             hours_to_show: 24
 
@@ -474,13 +474,13 @@ views:
           - type: entities
             title: "🐛 Diagnostic"
             entities:
-              - entity: sensor.gps_jkbms_gps_uptime
+              - entity: sensor.gps_jk_bms_van_gps_uptime
                 name: Uptime
-              - entity: sensor.gps_jkbms_gps_wifi_signal
+              - entity: sensor.gps_jk_bms_van_gps_wifi_signal
                 name: Signal WiFi
-              - entity: sensor.gps_jkbms_gps_free_heap
+              - entity: sensor.gps_jk_bms_van_gps_free_heap
                 name: Mémoire libre
-              - entity: binary_sensor.gps_jkbms_bms_online
+              - entity: binary_sensor.gps_jk_bms_van_bms_online
                 name: BMS en ligne
-              - entity: text_sensor.gps_jkbms_bms_errors
+              - entity: sensor.gps_jk_bms_van_bms_errors
                 name: Alarmes BMS

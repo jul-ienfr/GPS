@@ -39,7 +39,7 @@ esphome:
   comment: "GPS Neo-6M + JK BMS V11H sur un seul ESP32"
   project:
     name: "julie.gps-jkbms"
-    version: "1.0.0"
+    version: "1.0.1"
   # Un seul job de compilation à la fois (voir commentaire ci-dessous).
   compile_process_limit: 1
 
@@ -142,6 +142,15 @@ ota:
       then:
         - switch.turn_off: ble_client_switch0
         - logger.log: "BLE suspendu pour l'OTA"
+    # Sans ca, un OTA qui echoue laisse le BLE coupe jusqu'au prochain reboot
+    on_end:
+      then:
+        - switch.turn_on: ble_client_switch0
+        - logger.log: "OTA OK : BLE BMS reactive"
+    on_error:
+      then:
+        - switch.turn_on: ble_client_switch0
+        - logger.log: "OTA en echec : BLE BMS reactive"
 
 wifi:
   ssid: !secret wifi_ssid
@@ -420,7 +429,7 @@ number:
 #  couper le courant qui arrive au module — d'où le MOSFET ci-dessous.
 #
 #    Niveau 1 — sans aucun câblage (déjà actif dans CE fichier)
-#      • power_save_mode VERY_LIGHT : WiFi endormi entre les transmissions
+#      • power_save_mode NONE (IDF : LIGHT/HIGH = Arduino seul, voir § wifi)
 #      • output_power 14 dBm : ~30 mA de moins qu'à 20 dBm
 #      • throttle du BMS à 5 s (montable à 30 s : voir ci-dessous)
 #      • display_always_on ÉTEINT : l'écran du BMS ne tire plus sur le pack
@@ -566,6 +575,9 @@ select:
 # Volontairement SANS shutdown / restart / factory_reset : trop dangereux
 # à portée d'un dashboard.
 button:
+  - platform: restart
+    name: "ESP Restart"
+    icon: "mdi:restart"
   - platform: jk_bms_ble
     jk_bms_ble_id: bms0
     retrieve_settings:
@@ -617,9 +629,11 @@ text_sensor:
     name: "Mode Éco"
     id: eco_status_text
     icon: "mdi:leaf"
-    # Valeur poussée à la main par le `on_state` de ha_eco_mode
+    # Valeur poussée par le `on_state` de ha_eco_mode ; défaut au boot
+    # (avant, lambda vide -> sensor.gps_jk_bms_van_mode_eco toujours vide
+    # tant que le input_boolean n'avait pas changé d'état côté HA)
     lambda: |-
-      return "";
+      return "Mode normal actif";
 
 # =============================================================================
 #  SENSORS

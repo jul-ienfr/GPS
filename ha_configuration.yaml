@@ -44,14 +44,14 @@ input_boolean:
 # =============================================================================
 template:
   - device_tracker:
-      - name: "Van"
+      - name: "Van GPS Tracker"
         unique_id: van_gps_tracker
         source_type: gps
         # Pas de fix GPS → on considère le van « à la maison ».
         # (valeur arbitraire : seule la position compte pour la carte)
         state: >-
-          {{ 'home' if is_state('binary_sensor.gps_jkbms_gps_status', 'off')
+          {{ 'home' if is_state('binary_sensor.gps_jk_bms_van_gps_status', 'off')
              else 'not_home' }}
-        latitude: "{{ states('sensor.gps_jkbms_van_latitude') | float(none) }}"
-        longitude: "{{ states('sensor.gps_jkbms_van_longitude') | float(none) }}"
+        latitude: "{{ states('sensor.gps_jk_bms_van_van_latitude') | float(none) }}"
+        longitude: "{{ states('sensor.gps_jk_bms_van_van_longitude') | float(none) }}"
 

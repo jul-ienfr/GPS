@@ -21,7 +21,7 @@
 rest_command:
   traccar_send_position:
     url: >-
-      http://{{ states('input_text.traccar_host') | default('demo.traccar.org', true) }}:{{ states('input_number.traccar_port') | int(5055) }}/?id={{ states('input_text.traccar_device_id') }}&lat={{ states('sensor.van_latitude') | float(0) }}&lon={{ states('sensor.van_longitude') | float(0) }}&timestamp={{ now().timestamp() | int(0) }}&altitude={{ states('sensor.van_altitude') | float(0) }}&speed={{ states('sensor.van_speed') | float(0) }}&heading={{ states('sensor.gps_direction') | float(0) }}&hdop={{ states('sensor.gps_hdop') | float(0) }}&batt={{ states('sensor.bms_state_of_charge') | float(0) }}&valid={{ 'true' if states('binary_sensor.gps_status') == 'on' else 'false' }}
+      http://{{ states('input_text.traccar_host') | default('demo.traccar.org', true) }}:{{ states('input_number.traccar_port') | int(5055) }}/?id={{ states('input_text.traccar_device_id') }}&lat={{ states('sensor.gps_jk_bms_van_van_latitude') | float(0) }}&lon={{ states('sensor.gps_jk_bms_van_van_longitude') | float(0) }}&timestamp={{ now().timestamp() | int(0) }}&altitude={{ states('sensor.gps_jk_bms_van_van_altitude') | float(0) }}&speed={{ states('sensor.gps_jk_bms_van_van_speed') | float(0) }}&heading={{ states('sensor.gps_jk_bms_van_gps_direction') | float(0) }}&hdop={{ states('sensor.gps_jk_bms_van_gps_hdop') | float(0) }}&batt={{ states('sensor.gps_jk_bms_van_bms_state_of_charge') | float(0) }}&valid={{ 'true' if states('binary_sensor.gps_jk_bms_van_gps_status') == 'on' else 'false' }}
     method: get
 
 # --- Paramètres réglables depuis l'interface Home Assistant -----------------
@@ -59,8 +59,8 @@ template:
         unique_id: traccar_gps_valide
         icon: "mdi:map-marker-check"
         state: >-
-          {{ states('binary_sensor.gps_status') == 'on'
-             and states('sensor.van_latitude') not in ['unknown', 'unavailable', 'none', 'None', ''] }}
+          {{ states('binary_sensor.gps_jk_bms_van_gps_status') == 'on'
+             and states('sensor.gps_jk_bms_van_van_latitude') not in ['unknown', 'unavailable', 'none', 'None', ''] }}
 
 # =============================================================================
 #  Automatisation
@@ -78,8 +78,8 @@ automation:
       # changement d'état ici = vrai déplacement → envoi immédiat.
       - platform: state
         entity_id:
-          - sensor.van_latitude
-          - sensor.van_longitude
+          - sensor.gps_jk_bms_van_van_latitude
+          - sensor.gps_jk_bms_van_van_longitude
         id: "mouvement"
       # À l'arrêt : la position ne change pas (pas d'événement state),
       # donc on réveille l'envoi sur horloge pour le heartbeat.
