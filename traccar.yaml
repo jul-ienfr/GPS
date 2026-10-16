@@ -1,0 +1,140 @@
+# =============================================================================
+#  Traccar — liaison Home Assistant → serveur Traccar
+# =============================================================================
+#  Le protocole utilisé est OsmAnd (une simple requête HTTP GET), qui est le
+#  plus simple à mettre en œuvre et celui attendu par le port 5055 de Traccar.
+#
+#  À FAIRE :
+#    1. Côté serveur Traccar, créer un « appareil » avec l'identifiant
+#       `traccar_device_id` (par défaut "van") et lui associer une position.
+#    2. Copier ce bloc dans Home Assistant :
+#         - soit directement dans configuration.yaml,
+#         - soit en package : `homeassistant: packages: !include_dir_named packages`
+#    3. Remplir les 5 valeurs en bas du fichier.
+#
+#  Côté Traccar, l'appareil doit avoir :
+#      Identifiant (identifier) : van
+#      Téléphone (phone)         : votre_email@exemple.fr
+#      Mot de passe              : votre_mot_de_passe
+# =============================================================================
+
+rest_command:
+  traccar_send_position:
+    url: >-
+      http://{{ states('input_text.traccar_host') | default('demo.traccar.org', true) }}:{{ states('input_number.traccar_port') | int(5055) }}/?id={{ states('input_text.traccar_device_id') }}&lat={{ states('sensor.van_latitude') | float(0) }}&lon={{ states('sensor.van_longitude') | float(0) }}&timestamp={{ now().timestamp() | int(0) }}&altitude={{ states('sensor.van_altitude') | float(0) }}&speed={{ states('sensor.van_speed') | float(0) }}&heading={{ states('sensor.gps_direction') | float(0) }}&hdop={{ states('sensor.gps_hdop') | float(0) }}&batt={{ states('sensor.bms_state_of_charge') | float(0) }}&valid={{ 'true' if states('binary_sensor.gps_status') == 'on' else 'false' }}
+    method: get
+
+# --- Paramètres réglables depuis l'interface Home Assistant -----------------
+input_text:
+  traccar_host:
+    name: "Traccar — hôte"
+    initial: "demo.traccar.org"
+    max: 255
+
+  traccar_device_id:
+    name: "Traccar — identifiant de l'appareil"
+    initial: "van"
+    max: 64
+
+input_number:
+  traccar_port:
+    name: "Traccar — port"
+    initial: 5055
+    min: 1
+    max: 65535
+    step: 1
+
+  traccar_interval_minutes:
+    name: "Traccar — heartbeat à l'arrêt"
+    initial: 15
+    min: 5
+    max: 60
+    step: 1
+    unit_of_measurement: "min"
+
+# --- Garde-fou : le GPS a-t-il un fix ? ------------------------------------
+template:
+  - binary_sensor:
+      - name: "Traccar GPS Valide"
+        unique_id: traccar_gps_valide
+        icon: "mdi:map-marker-check"
+        state: >-
+          {{ states('binary_sensor.gps_status') == 'on'
+             and states('sensor.van_latitude') not in ['unknown', 'unavailable', 'none', 'None', ''] }}
+
+# =============================================================================
+#  Automatisation
+# =============================================================================
+automation:
+  - alias: "Traccar — envoyer la position du van"
+    id: traccar_send_position
+    description: >-
+      Envoie la position GPS du van au serveur Traccar via le protocole OsmAnd.
+      En mouvement : envoi immédiat dès que l'ESP publie (toutes les ~3 s).
+      À l'arrêt : heartbeat espacé (défaut 15 min), rien d'autre.
+
+    trigger:
+      # En mouvement : l'ESP ne publie que si > 10 m parcourus, donc tout
+      # changement d'état ici = vrai déplacement → envoi immédiat.
+      - platform: state
+        entity_id:
+          - sensor.van_latitude
+          - sensor.van_longitude
+        id: "mouvement"
+      # À l'arrêt : la position ne change pas (pas d'événement state),
+      # donc on réveille l'envoi sur horloge pour le heartbeat.
+      - platform: time_pattern
+        minutes: "/5"
+        id: "heartbeat"
+
+    condition:
+      # 1. Le GPS doit avoir un fix
+      - condition: state
+        entity_id: binary_sensor.traccar_gps_valide
+        state: "on"
+      # 2. Envoi immédiat si mouvement, sinon on respecte le heartbeat
+      #    (le trigger horloge est volontairement à 5 min pour laisser HA
+      #    recalculer si on change le réglage).
+      - condition: template
+        value_template: >-
+          {{ trigger.id == 'mouvement' or
+             (as_timestamp(states('input_datetime.traccar_last_send'), 0)
+              + states('input_number.traccar_interval_minutes') | int(15) * 60)
+             <= now().timestamp() }}
+
+    action:
+      # Mémorise l'instant du dernier envoi (sert au heartbeat ci-dessus)
+      - service: input_datetime.set_datetime
+        target:
+          entity_id: input_datetime.traccar_last_send
+        data:
+          timestamp: "{{ now().timestamp() | int(0) }}"
+
+      # Envoi à Traccar
+      - service: rest_command.traccar_send_position
+
+    # Trace légère pour diagnostiquer sans passer par les logs ESPHome
+    mode: single
+    max_exceeded: silent
+
+input_datetime:
+  traccar_last_send:
+    name: "Traccar — dernier envoi"
+    has_date: true
+    has_time: true
+
+# =============================================================================
+#  VALEURS À REMPLIR — copiez ce bloc dans votre secrets.yaml
+# =============================================================================
+#  Les valeurs par défaut ci-dessus (demo.traccar.org / 5055 / van) suffisent
+#  pour tester. Pour votre propre serveur, changez `initial:` ici, ou mieux :
+#  utilisez ces lignes dans HA.
+#
+#  input_text:
+#    traccar_host: mon.serveur.traccar.org
+#    traccar_device_id: van
+#
+#  input_number:
+#    traccar_port: 5055
+#    traccar_interval_minutes: 2
+# =============================================================================

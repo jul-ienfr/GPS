@@ -1,144 +1,486 @@
-# ---------------------------------------------------------
-# GPS Van Tracker — Dashboard Lovelace
-# ---------------------------------------------------------
-# Pour importer ce dashboard dans HA :
-#   1. Aller dans Paramètres → Dashboards
-#   2. Créer un nouveau dashboard (ou éditer un existant)
-#   3. Cliquer sur l'icône YAML (3 points → Raw config editor)
-#   4. Coller le contenu de ce fichier
-# ---------------------------------------------------------
+# =============================================================================
+#  GPS + JK BMS Van — Dashboard Lovelace
+# =============================================================================
+#  Import :
+#    1. Paramètres → Tableaux de bord → Nouveau tableau de bord
+#    2. ⋯ → « Modifier en YAML » (Raw config editor)
+#    3. Coller le contenu de ce fichier
+#
+#  ⚠️  Toutes les entités sont préfixées par le nom de l'appareil ESPHome.
+#      Le nom est défini dans gps+jkbms.yaml :
+#          substitutions: device_name: gps-jkbms
+#      → les entités s'appellent donc sensor.gps_jkbms_van_latitude, etc.
+#
+#      SI VOUS CHANGEZ `device_name`, il faut corriger TOUTES les entités
+#      de ce fichier (rechercher / remplacer « gps_jkbms_ »).
+#
+#  L'ancienne carte pointait sur `device_tracker.gps`, une entité qui
+#  n'existait pas. Elle utilise maintenant `device_tracker.van`, fabriqué par
+#  le bloc `template:` de ha_configuration.yaml.
+# =============================================================================
 
-title: GPS Van
+title: GPS + BMS Van
 views:
-  - title: Tracker
-    path: gps-van
-    icon: mdi:map-marker-radius
+  # ===========================================================================
+  #  VUE 1 — LE VAN (position + contrôle)
+  # ===========================================================================
+  - title: Van
+    path: van
+    icon: mdi:van-utility
     type: sections
     sections:
-      # ===== CARTE =====
+      # ----- CARTE ----------------------------------------------------------
       - type: grid
         column_span: 2
         cards:
           - type: map
-            title: "📍 Position Van"
+            title: "📍 Position du van"
             entities:
-              - entity: device_tracker.gps
+              - entity: device_tracker.van
                 name: Van
             aspect_ratio: "16:9"
             default_zoom: 15
             dark_mode: true
 
-      # ===== DONNÉES GPS =====
+      # ----- DONNÉES GPS ----------------------------------------------------
       - type: grid
         column_span: 1
         cards:
           - type: entities
             title: "🛰️ Données GPS"
+            header: "GPS Satellites"
+            show_header_toggle: false
             entities:
-              - entity: sensor.van_latitude
+              - entity: sensor.gps_jkbms_van_latitude
                 name: Latitude
                 icon: mdi:latitude
-              - entity: sensor.van_longitude
+              - entity: sensor.gps_jkbms_van_longitude
                 name: Longitude
                 icon: mdi:longitude
-              - entity: sensor.van_altitude
+              - entity: sensor.gps_jkbms_van_altitude
                 name: Altitude
                 icon: mdi:altimeter
-              - entity: sensor.van_speed
+              - entity: sensor.gps_jkbms_van_speed
                 name: Vitesse
                 icon: mdi:speedometer
-              - entity: sensor.gps_direction
+              - entity: sensor.gps_jkbms_gps_direction
                 name: Direction
                 icon: mdi:compass
-              - entity: sensor.gps_satellites
+              - entity: sensor.gps_jkbms_gps_satellites
                 name: Satellites
                 icon: mdi:satellite-variant
-              - entity: sensor.gps_hdop
+              - entity: sensor.gps_jkbms_gps_hdop
                 name: Précision (HDOP)
                 icon: mdi:crosshairs-gps
 
-      # ===== ÉTAT & CONTROLES =====
+      # ----- BMS EN UN COUP D'ŒIL -------------------------------------------
       - type: grid
         column_span: 1
         cards:
           - type: entities
-            title: "⚙️ Contrôles"
+            title: "🔋 Batterie"
             entities:
-              - entity: input_boolean.mode_veille_gps_van
-                name: Mode Veille
-                icon: mdi:sleep
-              - entity: input_boolean.debug_mode_gps_van
-                name: Mode Debug
-                icon: mdi:bug
+              - entity: sensor.gps_jkbms_bms_state_of_charge
+                name: Charge
+              - entity: sensor.gps_jkbms_bms_total_voltage
+                name: Tension pack
+              - entity: sensor.gps_jkbms_bms_current
+                name: Courant
+              - entity: sensor.gps_jkbms_bms_power
+                name: Puissance
               - type: divider
-              - entity: number.gps_update_interval
-                name: Intervalle publication
-                icon: mdi:timer-sand
-              - entity: number.sleep_duration
-                name: Durée deep sleep
-                icon: mdi:timer-sleep
+              - entity: sensor.gps_jkbms_bms_delta_cell_voltage
+                name: "Écart mini/maxi cellules"
+              - entity: sensor.gps_jkbms_bms_temperature_1
+                name: Température 1
+              - entity: sensor.gps_jkbms_bms_temperature_2
+                name: Température 2
+              - type: divider
+              - entity: binary_sensor.gps_jkbms_bms_online
+                name: "BMS en ligne"
+              - entity: text_sensor.gps_jkbms_bms_errors
+                name: Alarmes
 
-          - type: glance
-            title: "📊 État"
-            entities:
-              - entity: binary_sensor.gps_status
-                name: GPS
-                icon: mdi:satellite-variant
-              - entity: sensor.gps_uptime
-                name: Uptime
-                icon: mdi:clock-outline
-              - entity: binary_sensor.ha_sleep_status
-                name: Veille HA
-                icon: mdi:sleep
-              - entity: binary_sensor.ha_debug_mode
-                name: Debug HA
-                icon: mdi:bug
-
-      # ===== DEBUG =====
+      # ----- CONTRÔLES & ÉCONOMIE D'ÉNERGIE ---------------------------------
       - type: grid
         column_span: 2
         cards:
           - type: entities
-            title: "🐛 Debug (mode debug uniquement)"
+            title: "🌿 Économie d'énergie"
             entities:
-              - entity: sensor.gps_wifi_signal
-                name: Signal WiFi
-                icon: mdi:wifi
-              - entity: sensor.gps_free_heap
-                name: Mémoire libre
-                icon: mdi:memory
+              - entity: input_boolean.mode_eco_gps_van
+                name: "Mode ÉCO (coupe le GPS et le BLE)"
+              - entity: switch.gps_jkbms_gps_power
+                name: "Alimentation GPS"
+              - entity: switch.gps_jkbms_bms_bluetooth
+                name: "Bluetooth BMS"
+              - entity: text_sensor.gps_jkbms_mode_eco
+                name: "État"
+              - type: divider
+              - entity: number.gps_jkbms_gps_update_interval
+                name: "Publication GPS toutes les"
+              - entity: input_boolean.debug_mode_gps_van
+                name: "Mode Debug (1 publication/s)"
 
+          - type: glance
+            title: "📊 État du module"
+            entities:
+              - entity: binary_sensor.gps_jkbms_gps_status
+                name: GPS
+              - entity: binary_sensor.gps_jkbms_bms_balancing
+                name: Équilibrage
+              - entity: binary_sensor.gps_jkbms_bms_charging
+                name: Charge
+              - entity: binary_sensor.gps_jkbms_bms_discharging
+                name: Décharge
+              - entity: sensor.gps_jkbms_gps_uptime
+                name: Uptime
+              - entity: sensor.gps_jkbms_gps_wifi_signal
+                name: WiFi
+
+          - type: entities
+            title: "⚙️ Commandes BMS (⚠️ écrivent dans le BMS)"
+            entities:
+              - entity: switch.gps_jkbms_bms_display_always_on
+                name: "Écran toujours allumé"
+              - entity: switch.gps_jkbms_bms_balancer
+                name: "Équilibrage"
+              - entity: switch.gps_jkbms_bms_charging
+                name: "Charge autorisée"
+              - entity: switch.gps_jkbms_bms_discharging
+                name: "Décharge autorisée"
+              - type: divider
+              - entity: switch.gps_jkbms_bms_heating
+                name: "Chauffage"
+              - entity: switch.gps_jkbms_bms_emergency
+                name: "Mode urgence"
+              - entity: switch.gps_jkbms_bms_charging_float_mode
+                name: "Charge float"
+              - entity: switch.gps_jkbms_bms_smart_sleep
+                name: "Veille intelligente"
+              - type: divider
+              - entity: select.gps_jkbms_bms_multiplexed_port_mode
+                name: "Mode du port multiplexé"
+              - entity: select.gps_jkbms_bms_load_config_preset
+                name: "Charger un préréglage"
+              - type: divider
+              - entity: switch.gps_jkbms_bms_disable_temperature_sensors
+                name: "Désactiver sondes de température"
+              - entity: switch.gps_jkbms_bms_disable_pcl_module
+                name: "Désactiver module PCL"
+              - entity: switch.gps_jkbms_bms_timed_stored_data
+                name: "Enregistrement périodique"
+              - type: divider
+              - entity: button.gps_jkbms_bms_retrieve_settings
+                name: "Relire les réglages"
+              - entity: button.gps_jkbms_bms_retrieve_device_info
+                name: "Relire les infos"
+              - entity: button.gps_jkbms_bms_retrieve_logbook
+                name: "Relire le journal"
+
+  # ===========================================================================
+  #  VUE 2 — DÉTAIL BATTERIE
+  # ===========================================================================
+  - title: Batterie
+    path: batterie
+    icon: mdi:battery-heart-variant
+    type: sections
+    sections:
+      # ----- TENSION DE CHAQUE CELLULE --------------------------------------
+      - type: grid
+        column_span: 2
+        cards:
+          - type: entities
+            title: "🔋 Tension des cellules (pack 8S)"
+            show_header_toggle: false
+            entities:
+              - entity: sensor.gps_jkbms_bms_cell_voltage_1
+                name: Cellule 1
+              - entity: sensor.gps_jkbms_bms_cell_voltage_2
+                name: Cellule 2
+              - entity: sensor.gps_jkbms_bms_cell_voltage_3
+                name: Cellule 3
+              - entity: sensor.gps_jkbms_bms_cell_voltage_4
+                name: Cellule 4
+              - entity: sensor.gps_jkbms_bms_cell_voltage_5
+                name: Cellule 5
+              - entity: sensor.gps_jkbms_bms_cell_voltage_6
+                name: Cellule 6
+              - entity: sensor.gps_jkbms_bms_cell_voltage_7
+                name: Cellule 7
+              - entity: sensor.gps_jkbms_bms_cell_voltage_8
+                name: Cellule 8
+              - type: divider
+              - entity: sensor.gps_jkbms_bms_min_cell_voltage
+                name: Minimum
+              - entity: sensor.gps_jkbms_bms_max_cell_voltage
+                name: Maximum
+              - entity: sensor.gps_jkbms_bms_average_cell_voltage
+                name: Moyenne
+              - entity: sensor.gps_jkbms_bms_delta_cell_voltage
+                name: "Écart (mini - maxi)"
+
+      # ----- CAPACITÉ / CYCLES ----------------------------------------------
+      - type: grid
+        column_span: 1
+        cards:
+          - type: entities
+            title: "⚡ Puissance"
+            entities:
+              - entity: sensor.gps_jkbms_bms_total_voltage
+                name: Tension pack
+              - entity: sensor.gps_jkbms_bms_current
+                name: Courant
+              - entity: sensor.gps_jkbms_bms_power
+                name: Puissance
+              - entity: sensor.gps_jkbms_bms_state_of_charge
+                name: Charge
+              - entity: sensor.gps_jkbms_bms_capacity_remaining
+                name: Capacité restante
+              - entity: sensor.gps_jkbms_bms_full_charge_capacity
+                name: Capacité pleine charge
+              - entity: sensor.gps_jkbms_bms_balancing_current
+                name: Courant d'équilibrage
+
+          - type: entities
+            title: "🌡️ Températures"
+            entities:
+              - entity: sensor.gps_jkbms_bms_temperature_1
+                name: "Capteur 1"
+              - entity: sensor.gps_jkbms_bms_temperature_2
+                name: "Capteur 2"
+              - entity: sensor.gps_jkbms_bms_mosfet_temperature
+                name: "MOSFET"
+
+          - type: entities
+            title: "📅 Compteurs"
+            entities:
+              - entity: sensor.gps_jkbms_bms_charging_cycles
+                name: Cycles de charge
+              - entity: sensor.gps_jkbms_bms_total_cycle_capacity
+                name: Capacité cumulée
+              - entity: sensor.gps_jkbms_bms_total_runtime_hours
+                name: Durée de fonctionnement
+
+      # ----- IDENTIFICATION DU BMS ------------------------------------------
+      - type: grid
+        column_span: 2
+        cards:
+          - type: markdown
+            content: |
+              **BMS**
+
+              | | |
+              |---|---|
+              | Modèle | `{{ states('text_sensor.gps_jkbms_bms_device_model') }}` |
+              | Hardware | `{{ states('text_sensor.gps_jkbms_bms_hardware_version') }}` |
+              | Software | `{{ states('text_sensor.gps_jkbms_bms_software_version') }}` |
+              | Numéro de série | `{{ states('text_sensor.gps_jkbms_bms_serial_number') }}` |
+              | Fabriqué le | `{{ states('text_sensor.gps_jkbms_bms_manufacturing_date') }}` |
+              | Protocole ESPHome | `JK02_32S` (hardware ≥ 11.0) |
+              | Équilibrage | `{{ states('text_sensor.gps_jkbms_bms_balancer_status') }}` |
+              | Alarmes | `{{ states('text_sensor.gps_jkbms_bms_errors') }}` |
+
+  # ===========================================================================
+  #  VUE 3 — RÉGLAGES BMS (⚠️ ÉCRIVENT DANS LE BMS)
+  # ===========================================================================
+  #  Ces curseurs modifient réellement les seuils du BMS. Appuyer d'abord sur
+  #  « Relire les réglages » (carte Commandes, vue Van) pour synchroniser les
+  #  valeurs affichées avec celles du BMS.
+  - title: Réglages
+    path: reglages
+    icon: mdi:tune
+    type: sections
+    sections:
+      - type: grid
+        column_span: 1
+        cards:
+          - type: entities
+            title: "⚠️ Protections de tension (⚠️ écrivent dans le BMS)"
+            entities:
+              - entity: number.gps_jkbms_bms_cell_overvoltage_protection
+                name: "Survoltage cellule — seuil"
+              - entity: number.gps_jkbms_bms_cell_overvoltage_recovery
+                name: "Survoltage cellule — reprise"
+              - entity: number.gps_jkbms_bms_cell_undervoltage_protection
+                name: "Sous-voltage cellule — seuil"
+              - entity: number.gps_jkbms_bms_cell_undervoltage_recovery
+                name: "Sous-voltage cellule — reprise"
+              - type: divider
+              - entity: number.gps_jkbms_bms_power_off_voltage
+                name: "Tension d'arrêt"
+              - entity: number.gps_jkbms_bms_cell_soc100_voltage
+                name: "Tension cellule SOC 100 %"
+              - entity: number.gps_jkbms_bms_cell_soc0_voltage
+                name: "Tension cellule SOC 0 %"
+              - type: divider
+              - entity: number.gps_jkbms_bms_request_charge_voltage
+                name: "Tension demande de charge"
+              - entity: number.gps_jkbms_bms_request_float_voltage
+                name: "Tension float"
+
+          - type: entities
+            title: "⚡ Courants max (⚠️ écrivent dans le BMS)"
+            entities:
+              - entity: number.gps_jkbms_bms_max_charge_current
+                name: "Charge max"
+              - entity: number.gps_jkbms_bms_max_discharge_current
+                name: "Décharge max"
+              - entity: number.gps_jkbms_bms_max_balance_current
+                name: "Équilibrage max"
+              - type: divider
+              - entity: number.gps_jkbms_bms_balance_trigger_voltage
+                name: "Seuil de déclenchement équilibrage"
+              - entity: number.gps_jkbms_bms_balancing_start_voltage
+                name: "Tension de démarrage équilibrage"
+              - type: divider
+              - entity: number.gps_jkbms_bms_cell_count
+                name: "Nombre de cellules"
+              - entity: number.gps_jkbms_bms_total_battery_capacity
+                name: "Capacité totale"
+
+          - type: entities
+            title: "🌡️ Protections de température (⚠️ écrivent dans le BMS)"
+            entities:
+              - entity: number.gps_jkbms_bms_charge_overtemp_protection
+                name: "Charge sur-temp — seuil"
+              - entity: number.gps_jkbms_bms_charge_overtemp_recovery
+                name: "Charge sur-temp — reprise"
+              - entity: number.gps_jkbms_bms_discharge_overtemp_protection
+                name: "Décharge sur-temp — seuil"
+              - entity: number.gps_jkbms_bms_discharge_overtemp_recovery
+                name: "Décharge sur-temp — reprise"
+              - type: divider
+              - entity: number.gps_jkbms_bms_charge_undertemp_protection
+                name: "Charge sous-temp — seuil"
+              - entity: number.gps_jkbms_bms_charge_undertemp_recovery
+                name: "Charge sous-temp — reprise"
+              - entity: number.gps_jkbms_bms_discharge_undertemp_protection
+                name: "Décharge sous-temp — seuil"
+              - entity: number.gps_jkbms_bms_discharge_undertemp_recovery
+                name: "Décharge sous-temp — reprise"
+              - type: divider
+              - entity: number.gps_jkbms_bms_mosfet_overtemp_protection
+                name: "MOSFET sur-temp — seuil"
+              - entity: number.gps_jkbms_bms_mosfet_overtemp_recovery
+                name: "MOSFET sur-temp — reprise"
+
+      - type: grid
+        column_span: 1
+        cards:
+          - type: entities
+            title: "⏱️ Temporisations (⚠️ écrivent dans le BMS)"
+            entities:
+              - entity: number.gps_jkbms_bms_charge_overcurrent_delay
+                name: "Surintensité charge — délai"
+              - entity: number.gps_jkbms_bms_charge_overcurrent_recovery
+                name: "Surintensité charge — reprise"
+              - entity: number.gps_jkbms_bms_discharge_overcurrent_delay
+                name: "Surintensité décharge — délai"
+              - entity: number.gps_jkbms_bms_discharge_overcurrent_recovery
+                name: "Surintensité décharge — reprise"
+              - type: divider
+              - entity: number.gps_jkbms_bms_short_circuit_delay
+                name: "Court-circuit — délai"
+              - entity: number.gps_jkbms_bms_short_circuit_recovery
+                name: "Court-circuit — reprise"
+              - entity: number.gps_jkbms_bms_discharge_precharge_time
+                name: "Précharge décharge"
+
+          - type: entities
+            title: "😴 Veille et urgence (⚠️ écrivent dans le BMS)"
+            entities:
+              - entity: number.gps_jkbms_bms_smart_sleep_voltage
+                name: "Tension veille intelligente"
+              - entity: number.gps_jkbms_bms_smart_sleep_delay
+                name: "Délai veille intelligente"
+              - entity: number.gps_jkbms_bms_emergency_duration
+                name: "Durée mode urgence"
+              - type: divider
+              - entity: number.gps_jkbms_bms_voltage_calibration
+                name: "Calibration tension"
+              - entity: number.gps_jkbms_bms_current_calibration
+                name: "Calibration courant"
+
+  # ===========================================================================
+  #  VUE 4 — HISTORIQUES
+  # ===========================================================================
   - title: Historique
-    path: history
-    icon: mdi:history
+    path: historique
+    icon: mdi:chart-line
     type: sections
     sections:
       - type: grid
         column_span: 2
         cards:
           - type: history-graph
+            title: "📈 Charge de la batterie (24h)"
+            entities:
+              - entity: sensor.gps_jkbms_bms_state_of_charge
+                name: "Charge (%)"
+            hours_to_show: 24
+
+          - type: history-graph
+            title: "📈 Tension & courant du pack (24h)"
+            entities:
+              - entity: sensor.gps_jkbms_bms_total_voltage
+                name: "Tension (V)"
+              - entity: sensor.gps_jkbms_bms_current
+                name: "Courant (A)"
+            hours_to_show: 24
+
+          - type: history-graph
+            title: "📈 Écart entre cellules (24h)"
+            entities:
+              - entity: sensor.gps_jkbms_bms_delta_cell_voltage
+                name: "Écart (V)"
+              - entity: sensor.gps_jkbms_bms_max_cell_voltage
+                name: "Max (V)"
+              - entity: sensor.gps_jkbms_bms_min_cell_voltage
+                name: "Min (V)"
+            hours_to_show: 24
+
+          - type: history-graph
             title: "📈 Position (24h)"
             entities:
-              - entity: sensor.van_latitude
+              - entity: sensor.gps_jkbms_van_latitude
                 name: Latitude
-              - entity: sensor.van_longitude
+              - entity: sensor.gps_jkbms_van_longitude
                 name: Longitude
             hours_to_show: 24
 
           - type: history-graph
-            title: "📈 Vitesse & Altitude (24h)"
+            title: "📈 Vitesse & altitude (24h)"
             entities:
-              - entity: sensor.van_speed
-                name: Vitesse (km/h)
-              - entity: sensor.van_altitude
-                name: Altitude (m)
+              - entity: sensor.gps_jkbms_van_speed
+                name: "Vitesse (km/h)"
+              - entity: sensor.gps_jkbms_van_altitude
+                name: "Altitude (m)"
             hours_to_show: 24
 
           - type: history-graph
-            title: "📈 Satellites & HDOP (24h)"
+            title: "📈 Satellites & précision (24h)"
             entities:
-              - entity: sensor.gps_satellites
+              - entity: sensor.gps_jkbms_gps_satellites
                 name: Satellites
-              - entity: sensor.gps_hdop
+              - entity: sensor.gps_jkbms_gps_hdop
                 name: HDOP
             hours_to_show: 24
+
+      # ----- DIAGNOSTIC -----------------------------------------------------
+      - type: grid
+        column_span: 1
+        cards:
+          - type: entities
+            title: "🐛 Diagnostic"
+            entities:
+              - entity: sensor.gps_jkbms_gps_uptime
+                name: Uptime
+              - entity: sensor.gps_jkbms_gps_wifi_signal
+                name: Signal WiFi
+              - entity: sensor.gps_jkbms_gps_free_heap
+                name: Mémoire libre
+              - entity: binary_sensor.gps_jkbms_bms_online
+                name: BMS en ligne
+              - entity: text_sensor.gps_jkbms_bms_errors
+                name: Alarmes BMS

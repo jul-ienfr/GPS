@@ -1,7 +1,34 @@
-# Gitignore settings for ESPHome
-/.esphome/
-/secrets.yaml
+# =============================================================================
+#  GPS + JK BMS Van — fichiers à ne JAMAIS committer
+# =============================================================================
+
+# Secrets : mot de passe WiFi, clé API, mot de passe OTA, adresse MAC BMS
+secrets.yaml
+
+# Build ESPHome (firmwares, métadonnées)
+.esphome/
+**/.esphome/
+
+# Fichiers générés par ESPHome
 *.bin
-*.rbl
-*.crc
-*.ota.bin
+*.elf
+*.map
+
+# Sauvegardes et brouillons
+*~
+*.bak
+*.orig
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# =============================================================================
+#  Ce qui DOIT être commité :
+#    gps+jkbms.yaml            la config ESPHome
+#    secrets.yaml.example      le modèle (sans aucune vraie valeur)
+#    ha_configuration.yaml     les input_* Home Assistant
+#    traccar.yaml              la liaison Home Assistant → Traccar
+#    ha_dashboard.yaml         le tableau de bord
+#    README.md                 la doc
+# =============================================================================

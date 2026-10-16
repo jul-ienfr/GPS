@@ -1,0 +1,862 @@
+# =============================================================================
+#  GPS + JK BMS Van — configuration ESPHome fusionnée
+# =============================================================================
+#  Un seul ESP32 qui fait les deux :
+#    • le GPS Neo-6M en UART (GPIO22 RX / GPIO23 TX, 9600 baud)
+#    • le JK BMS hardware V11H en Bluetooth
+#
+#  Le tout remonte à Home Assistant, et HA se charge de pousser la position
+#  vers Traccar (voir traccar.yaml).
+#
+#  PRÉREQUIS
+#    • ESPHome >= 2026.1.0 (exigé par le composant JK BMS)
+#    • Le framework est esp-idf, et pas arduino : c'est ce que le dépôt
+#      syssi/esphome-jk-bms utilise et c'est indispensable pour faire
+#      coexister WiFi et BLE sur le même radio de l'ESP32.
+#
+#  PRÉREQUIS MATÉRIEL
+#    • Alimentation permanente (pas de deep sleep sur cette version)
+#    • ESP32 installé à portée BLE du BMS
+# =============================================================================
+
+substitutions:
+  device_name: gps-jkbms
+  friendly_name: "GPS + JK BMS Van"
+
+  # --- JK BMS ---------------------------------------------------------------
+  # Choix du protocole selon la version HARDWARE du BMS :
+  #   JK02_32S  → hardware >= 11.0   (votre cas : V11H)
+  #   JK02_24S  → hardware >= 6.0 et < 11.0
+  #   JK04      → hardware <= 3.0
+  # Le texte `hardware_version` renvoyé par le BMS dans HA permet de vérifier
+  # que vous êtes bien sur JK02_32S.
+  protocol_version: JK02_32S
+  external_components_source: github://syssi/esphome-jk-bms@main
+
+esphome:
+  name: ${device_name}
+  friendly_name: ${friendly_name}
+  comment: "GPS Neo-6M + JK BMS V11H sur un seul ESP32"
+  project:
+    name: "julie.gps-jkbms"
+    version: "1.0.0"
+  # Un seul job de compilation à la fois (voir commentaire ci-dessous).
+  compile_process_limit: 1
+
+  # Compilation : 1 seul job à la fois. Sans ça, deux gros fichiers C++
+  # (TinyGPS++, api_connection) compilés en parallèle font exploser la RAM
+  # de la machine qui compile (« Killed signal » sur cc1plus) sur les
+  # petites machines (Pi, NAS, HA Green, petit VPS). Ne change rien au
+  # firmware, ça ralentit juste un peu la compilation.
+
+  # Pas de deep sleep ici : le BMS doit être interrogé en continu.
+  # On garde uniquement la logique de bascule debug / production.
+  on_boot:
+    priority: -100
+    then:
+      # 1. Sécurité flash : laisse 5 secondes pour déclencher un OTA
+      #    (plus besoin des 30 s de la version deep sleep : on ne dort jamais)
+      - delay: 5s
+
+      # 2. On attend la connexion API (max 60 s)
+      - wait_until:
+          condition:
+            api.connected:
+          timeout: 60s
+
+      # 3. Petit délai tampon pour laisser arriver les états HA
+      - delay: 2s
+
+      # 4. On récupère l'état debug depuis HA
+      - lambda: |-
+          if (id(ha_debug_mode).has_state()) {
+            id(debug_mode) = id(ha_debug_mode).state;
+          }
+
+      # 4bis. On applique le mode éco reçu depuis HA (idem ci-dessous,
+      #       mais au boot on n'a pas encore reçu de `on_state`)
+      - if:
+          condition:
+            - binary_sensor.is_on: ha_eco_mode
+          then:
+            - switch.turn_off: gps_power_switch
+            - switch.turn_off: ble_client_switch0
+            - logger.log: "Mode ECO au boot : GPS et BLE coupés"
+
+      # 5. Bascule verbosité des logs
+      - lambda: |-
+          if (id(debug_mode)) {
+            ESP_LOGW("custom", "Mode DEBUG actif (pas de throttling GPS, logs verbeux)");
+            esp_log_level_set("custom", ESP_LOG_VERBOSE);
+            esp_log_level_set("gps", ESP_LOG_VERBOSE);
+          } else {
+            ESP_LOGD("custom", "Mode PRODUCTION actif");
+            esp_log_level_set("custom", ESP_LOG_WARN);
+            esp_log_level_set("gps", ESP_LOG_WARN);
+          }
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+    # syssi/esphome-jk-bms#63 : activer tous les capteurs d'un coup peut
+    # provoquer un stack overflow puis une boucle de reboot. On augmente
+    # la pile de la tâche principale (défaut : 3584 octets) pour éviter
+    # le problème, surtout combiné au GPS + API + WiFi.
+    sdkconfig_options:
+      CONFIG_ESP_MAIN_TASK_STACK_SIZE: "8192"
+
+# Sauvegarde des réglages (sliders) – évite d'user la flash à chaque seconde
+preferences:
+  flash_write_interval: 1min
+
+external_components:
+  - source: ${external_components_source}
+    # 0s = pas de re-téléchargement à chaque compilation (build reproductible)
+    refresh: 0s
+
+logger:
+  # Niveau global INFO : les tags BLE ci-dessous restent en INFO pour
+  # diagnostiquer d'éventuelles déconnexions (un niveau global WARN
+  # les interdirait, ESPHome impose une cohérence global/tag).
+  level: INFO
+  logs:
+    esp32_ble_tracker: INFO
+    esp32_ble_client: INFO
+
+# Requis par le capteur `platform: debug` (mémoire libre) plus bas.
+# L'intervalle de mise à jour se règle ici, pas sur le capteur.
+debug:
+  update_interval: 10s
+
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+    # Couper la connexion BLE en début d'OTA : sinon le transfert échoue
+    # quand le client BLE est occupé à parler au BMS.
+    on_begin:
+      then:
+        - switch.turn_off: ble_client_switch0
+        - logger.log: "BLE suspendu pour l'OTA"
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  fast_connect: true
+  output_power: 14dBm
+  # NONE est imposé par le framework IDF : sur ESP32, LIGHT et HIGH n'existent
+  # que sous Arduino. Le WiFi reste actif, ce qui est ce qu'on veut ici car
+  # WiFi et BLE se partagent le même radio 2,4 GHz.
+  power_save_mode: none
+
+  ap:
+    ssid: "GPS BMS Fallback Hotspot"
+    password: !secret fallback_password
+
+captive_portal:
+
+safe_mode:
+
+# =============================================================================
+#  BLUETOOTH — JK BMS
+# =============================================================================
+# Scan passif : on n'émet rien depuis l'ESP32, ce qui réduit fortement
+# la contention radio avec le WiFi.
+esp32_ble_tracker:
+  scan_parameters:
+    active: false
+
+ble_client:
+  - mac_address: !secret bms0_mac_address
+    id: client0
+
+jk_bms_ble:
+  - ble_client_id: client0
+    protocol_version: ${protocol_version}
+    # Interroger le BMS toutes les 5 s. Ne pas descendre plus bas :
+    # chaque trame occupe le radio.
+    throttle: 5s
+    id: bms0
+
+# =============================================================================
+#  UART — GPS Neo-6M
+# =============================================================================
+# Laisse GPIO16 / GPIO17 libres : ils reprennent le brochage de la prise
+# UART-TTL du BMS (voir README), si vous basculez un jour en filaire.
+uart:
+  rx_pin: 22
+  tx_pin: 23
+  baud_rate: 9600
+  id: uart_bus
+
+gps:
+  uart_id: uart_bus
+  id: internal_gps
+  update_interval: 1s
+
+  latitude:
+    name: "Internal Latitude"
+    id: int_lat
+    internal: true
+    filters:
+      - delta: 0.0001  # ~11 m — ignore le jitter GPS à l'arrêt
+  longitude:
+    name: "Internal Longitude"
+    id: int_lon
+    internal: true
+    filters:
+      - delta: 0.0001
+  altitude:
+    name: "Internal Altitude"
+    id: int_alt
+    internal: true
+    filters:
+      - delta: 1.0  # ignore les variations < 1 m
+  speed:
+    name: "Internal Speed"
+    id: int_speed
+    internal: true
+    unit_of_measurement: "km/h"
+    filters:
+      - delta: 1.0  # ignore les variations < 1 km/h
+  satellites:
+    name: "Internal Satellites"
+    id: int_sats
+    internal: true
+  hdop:
+    name: "Internal HDOP"
+    id: int_hdop
+    internal: true
+  course:
+    name: "Internal Course"
+    id: int_course
+    internal: true
+    unit_of_measurement: "°"
+
+# =============================================================================
+#  GLOBALES
+# =============================================================================
+globals:
+  - id: last_gps_update
+    type: uint32_t
+    initial_value: '0'
+  - id: last_pub_lat
+    type: float
+    initial_value: 'NAN'
+  - id: last_pub_lon
+    type: float
+    initial_value: 'NAN'
+  - id: debug_mode
+    type: bool
+    initial_value: 'false'
+
+# =============================================================================
+#  BINARY SENSORS
+# =============================================================================
+binary_sensor:
+  # --- États importés depuis Home Assistant --------------------------------
+  - platform: homeassistant
+    name: "HA Debug Mode"
+    entity_id: input_boolean.debug_mode_gps_van
+    id: ha_debug_mode
+    internal: true
+    on_state:
+      then:
+        - lambda: |-
+            id(debug_mode) = id(ha_debug_mode).state;
+            if (id(debug_mode)) {
+              ESP_LOGW("custom", "Mode DEBUG activé depuis HA");
+              esp_log_level_set("custom", ESP_LOG_VERBOSE);
+              esp_log_level_set("gps", ESP_LOG_VERBOSE);
+            } else {
+              ESP_LOGW("custom", "Mode PRODUCTION activé depuis HA");
+              esp_log_level_set("custom", ESP_LOG_WARN);
+              esp_log_level_set("gps", ESP_LOG_WARN);
+            }
+
+  # Remplace l'ancien `mode_veille` (qui pilotait le deep sleep).
+  # Ici il coupe physiquement le GPS et la connexion BLE du BMS, et espace
+  # les publications. C'est le « bouton économie d'énergie ».
+  - platform: homeassistant
+    name: "HA Eco Mode"
+    entity_id: input_boolean.mode_eco_gps_van
+    id: ha_eco_mode
+    internal: true
+    on_state:
+      then:
+        - if:
+            condition:
+              - binary_sensor.is_on: ha_eco_mode
+            then:
+              # --- Passage en mode éco ---
+              - switch.turn_off: gps_power_switch
+              - switch.turn_off: ble_client_switch0
+              - logger.log: "Mode ECO : GPS coupé du 3V3 et BLE BMS déconnecté"
+              - text_sensor.template.publish:
+                  id: eco_status_text
+                  state: "Mode éco actif"
+            else:
+              # --- Retour en mode normal ---
+              # Le GPS met ~30 s (hot start) à retrouver un fix après
+              # la remise sous tension ; le BLE met ~2-5 s à se reconnecter.
+              - switch.turn_on: gps_power_switch
+              - switch.turn_on: ble_client_switch0
+              - logger.log: "Mode NORMAL : GPS et BLE réactivés (fix dans ~30 s)"
+              - text_sensor.template.publish:
+                  id: eco_status_text
+                  state: "Mode normal actif"
+
+  # --- État du GPS ----------------------------------------------------------
+  - platform: template
+    name: "GPS Status"
+    icon: "mdi:satellite-variant"
+    id: gps_status
+    lambda: |-
+      // GPS coupé (mode éco ou interrupteur HA) → jamais de fix.
+      // Sans ce test, le composant `gps:` garderait sa dernière position en
+      // mémoire et on publierait indéfiniment une position périmée.
+      if (!id(gps_power_switch).state) return false;
+      if (std::isnan(id(int_lat).state)) return false;
+      return true;
+
+  # --- État du BMS ----------------------------------------------------------
+  - platform: jk_bms_ble
+    jk_bms_ble_id: bms0
+    balancing:
+      name: "BMS Balancing"
+      icon: "mdi:battery-heart-variant"
+    charging:
+      name: "BMS Charging"
+      icon: "mdi:battery-charging"
+    discharging:
+      name: "BMS Discharging"
+      icon: "mdi:battery-arrow-down"
+    heating:
+      name: "BMS Heating"
+      icon: "mdi:radiator"
+    online_status:
+      name: "BMS Online"
+      id: bms_online
+      icon: "mdi:bluetooth-connect"
+
+# =============================================================================
+#  NUMBER (curseurs)
+# =============================================================================
+number:
+  - platform: template
+    name: "GPS Update Interval"
+    id: gps_interval
+    optimistic: true
+    min_value: 2
+    max_value: 120
+    step: 1
+    initial_value: 3
+    unit_of_measurement: "s"
+    mode: slider
+    icon: "mdi:timer-sand"
+    restore_value: true
+
+  # --- JK BMS : réglages (ÉCRIVENT dans le BMS) -------------------------------
+  # Reprend l'exemple V11 officiel : seuils de protection, courants max,
+  # temporisations, calibrations. Ce sont des réglages lus/écrits à la
+  # demande (bouton `BMS Retrieve Settings`), pas du polling continu :
+  # aucun impact sur la pile (voir issue #63, qui ne concerne que les
+  # capteurs `sensor:`).
+  # ⚠️  Chaque curseur MODIFIE le BMS. Ne pas toucher sans savoir ce qu'on fait.
+  - platform: jk_bms_ble
+    jk_bms_ble_id: bms0
+    balance_trigger_voltage:                     {name: "BMS Balance Trigger Voltage",            icon: "mdi:battery-heart-variant"}
+    cell_count:                                  {name: "BMS Cell Count",                         icon: "mdi:counter"}
+    total_battery_capacity:                      {name: "BMS Total Battery Capacity",             icon: "mdi:battery"}
+    cell_voltage_overvoltage_protection:         {name: "BMS Cell Overvoltage Protection",        icon: "mdi:flash"}
+    cell_voltage_overvoltage_recovery:           {name: "BMS Cell Overvoltage Recovery",          icon: "mdi:flash"}
+    cell_voltage_undervoltage_protection:        {name: "BMS Cell Undervoltage Protection",       icon: "mdi:flash"}
+    cell_voltage_undervoltage_recovery:          {name: "BMS Cell Undervoltage Recovery",         icon: "mdi:flash"}
+    balancing_start_voltage:                     {name: "BMS Balancing Start Voltage",            icon: "mdi:battery-heart-variant"}
+    voltage_calibration:                         {name: "BMS Voltage Calibration",                icon: "mdi:tune"}
+    current_calibration:                         {name: "BMS Current Calibration",                icon: "mdi:tune"}
+    power_off_voltage:                           {name: "BMS Power Off Voltage",                  icon: "mdi:power"}
+    max_balance_current:                         {name: "BMS Max Balance Current",                icon: "mdi:current-dc"}
+    max_charge_current:                          {name: "BMS Max Charge Current",                 icon: "mdi:current-dc"}
+    max_discharge_current:                       {name: "BMS Max Discharge Current",              icon: "mdi:current-dc"}
+    smart_sleep_voltage:                         {name: "BMS Smart Sleep Voltage",                icon: "mdi:flash"}
+    smart_sleep_delay:                           {name: "BMS Smart Sleep Delay",                  icon: "mdi:timer"}
+    emergency_duration:                          {name: "BMS Emergency Duration",                 icon: "mdi:timer"}
+    cell_soc100_voltage:                         {name: "BMS Cell SOC100 Voltage",                icon: "mdi:flash"}
+    cell_soc0_voltage:                           {name: "BMS Cell SOC0 Voltage",                  icon: "mdi:flash"}
+    cell_request_charge_voltage:                 {name: "BMS Request Charge Voltage",            icon: "mdi:flash"}
+    cell_request_float_voltage:                  {name: "BMS Request Float Voltage",              icon: "mdi:flash"}
+    charge_overcurrent_protection_delay:         {name: "BMS Charge Overcurrent Delay",           icon: "mdi:timer"}
+    charge_overcurrent_protection_recovery_time: {name: "BMS Charge Overcurrent Recovery",        icon: "mdi:timer"}
+    discharge_overcurrent_protection_delay:      {name: "BMS Discharge Overcurrent Delay",        icon: "mdi:timer"}
+    discharge_overcurrent_protection_recovery_time: {name: "BMS Discharge Overcurrent Recovery",  icon: "mdi:timer"}
+    short_circuit_protection_delay:              {name: "BMS Short Circuit Delay",                icon: "mdi:timer"}
+    short_circuit_protection_recovery_time:      {name: "BMS Short Circuit Recovery",             icon: "mdi:timer"}
+    charge_overtemperature_protection:           {name: "BMS Charge Overtemp Protection",         icon: "mdi:thermometer"}
+    charge_overtemperature_protection_recovery:  {name: "BMS Charge Overtemp Recovery",           icon: "mdi:thermometer"}
+    discharge_overtemperature_protection:        {name: "BMS Discharge Overtemp Protection",      icon: "mdi:thermometer"}
+    discharge_overtemperature_protection_recovery: {name: "BMS Discharge Overtemp Recovery",     icon: "mdi:thermometer"}
+    charge_undertemperature_protection:          {name: "BMS Charge Undertemp Protection",        icon: "mdi:thermometer"}
+    charge_undertemperature_protection_recovery: {name: "BMS Charge Undertemp Recovery",          icon: "mdi:thermometer"}
+    discharge_undertemperature_protection:       {name: "BMS Discharge Undertemp Protection",     icon: "mdi:thermometer"}
+    discharge_undertemperature_protection_recovery: {name: "BMS Discharge Undertemp Recovery",   icon: "mdi:thermometer"}
+    mosfet_overtemperature_protection:           {name: "BMS MOSFET Overtemp Protection",         icon: "mdi:thermometer"}
+    mosfet_overtemperature_protection_recovery:  {name: "BMS MOSFET Overtemp Recovery",           icon: "mdi:thermometer"}
+    discharge_precharge_time:                    {name: "BMS Discharge Precharge Time",           icon: "mdi:timer"}
+
+# =============================================================================
+#  ÉCONOMIE D'ÉNERGIE
+# =============================================================================
+#  Voyez le README § Économie d'énergie pour le détail des chiffres et le
+#  tableau de consommation. En résumé :
+#
+#  Le point clé à comprendre : un switch ESPHome coupe une connexion LOGIQUE,
+#  jamais une alimentation physique. C'est pour ça que votre module « reste
+#  allumé » quand vous coupez la connexion dans HA. Le seul vrai levier, c'est
+#  couper le courant qui arrive au module — d'où le MOSFET ci-dessous.
+#
+#    Niveau 1 — sans aucun câblage (déjà actif dans CE fichier)
+#      • power_save_mode VERY_LIGHT : WiFi endormi entre les transmissions
+#      • output_power 14 dBm : ~30 mA de moins qu'à 20 dBm
+#      • throttle du BMS à 5 s (montable à 30 s : voir ci-dessous)
+#      • display_always_on ÉTEINT : l'écran du BMS ne tire plus sur le pack
+#      • logger en WARN : moins d'écritures flash
+#      • scan BLE passif (active: false)
+#      → ce qu'il RESTE à durcir si vous voulez : mettre `throttle: 30s` sur
+#        jk_bms_ble, descendre `output_power` à 10 dBm, et retirer les blocs
+#        `captive_portal:` / `safe_mode:`.
+#
+#    Niveau 2 — un MOSFET sur le VCC du GPS (câblage ci-dessous)
+#      • Le switch `GPS Power` coupe alors RÉELLEMENT les ~45 mA du module.
+#      • `mode_eco_gps_van` coupe en même temps le BLE du BMS.
+#
+#    Niveau 3 — deep sleep cyclé (voir README pour le snippet)
+#      • Le seul levier qui change l'ordre de grandeur.
+#      • Il faut réintroduire `deep_sleep:`, ce qui est incompatible avec une
+#        surveillance BMS continue. NON activé ici car vous avez une
+#        alimentation permanente.
+#
+#  Comment RALLUMER : dans tous les cas, repassez `input_boolean.mode_eco_gps_van`
+#  sur OFF. Les deux switchs se rallument tout seuls (voir le `on_state` de
+#  `ha_eco_mode` dans le bloc `binary_sensor`). Comptez ~30 s pour que le GPS
+#  retrouve un fix.
+#  Si l'ESP32 était en deep sleep, il se réveille de lui-même au bout de
+#  `sleep_duration`, ou immédiatement via le contact câblé sur le wakeup_pin.
+# =============================================================================
+
+# --- Niveau 2 : coupure matérielle du GPS ------------------------------------
+# Câblage :
+#
+#   P-channel MOSFET (ex. AO3401 / Si2301) en high-side sur le VCC du GPS :
+#
+#      ESP32 GPIO25 ──┬─── 1 kΩ ─── G (grille)
+#                    │
+#               [10 kΩ pull-up vers VCC-GPS]
+#                    │
+#      VCC 3.3V ─────┴── S (source)
+#      D (drain) ───────────── VCC du Neo-6M
+#      GND du GPS ──────────── GND (commun)
+#
+#   GPIO25 à 0   → Vgs = -3,3 V → MOSFET passant  → GPS ALLUMÉ
+#   GPIO25 à 3.3V → Vgs = 0     → MOSFET bloqué   → GPS COUPÉ
+#   (la résistance de pull-up assure l'état éteint au boot)
+#
+#   Si vous n'avez pas encore soudé ce MOSFET, commentez ce bloc : le switch
+#   apparaîtra toujours dans HA mais n'aura aucun effet physique.
+switch:
+  - platform: gpio
+    pin:
+      number: GPIO25
+      inverted: true        # actif à l'état bas : passant quand la sortie est LOW
+      mode:
+        output: true
+    id: gps_power_switch
+    name: "GPS Power"
+    icon: "mdi:power-plug"
+    # Toujours allumé au boot : on ne veut pas que le GPS reste éteint après
+    # un redémarrage.
+    restore_mode: ALWAYS_ON
+    # Ne PAS couper le GPS pendant un OTA : le flash n'en a pas besoin, mais
+    # un redémarrage avec le GPS éteint est difficile à diagnostiquer.
+    on_turn_on:
+      then:
+        - logger.log: "GPS alimenté"
+    on_turn_off:
+      then:
+        - logger.log: "GPS coupé (mode éco)"
+        - lambda: |-
+            // Oublie la dernière position : au rallumage, la première
+            // position sera toujours republiée (dist_m = NaN).
+            id(last_gps_update) = 0;
+            id(last_pub_lat) = NAN;
+            id(last_pub_lon) = NAN;
+
+  # --- Interrupteur de la connexion BLE. Doit être coupé pendant les OTA. -----
+  #  ATTENTION : ce switch coupe la connexion LOGIQUE (le client BLE), pas
+  #  l'alimentation du BMS. Le BMS, lui, reste alimenté par le pack.
+  - platform: ble_client
+    ble_client_id: client0
+    name: "BMS Bluetooth"
+    id: ble_client_switch0
+    icon: "mdi:bluetooth"
+    restore_mode: ALWAYS_ON
+
+  # ⚠️  Les switchs ci-dessous ÉCRIVENT dans le BMS.
+  #     `BMS Charging` / `BMS Discharging` coupent réellement la charge ou la
+  #     décharge du pack — à ne pas manipuler sans savoir ce qu'on fait.
+  - platform: jk_bms_ble
+    jk_bms_ble_id: bms0
+    charging:
+      name: "BMS Charging"
+      icon: "mdi:battery-charging-outline"
+    discharging:
+      name: "BMS Discharging"
+      icon: "mdi:battery-arrow-down-outline"
+    balancer:
+      name: "BMS Balancer"
+      icon: "mdi:battery-heart-variant"
+    emergency:
+      name: "BMS Emergency"
+      icon: "mdi:alarm-light"
+    heating:
+      name: "BMS Heating"
+      icon: "mdi:radiator"
+    disable_temperature_sensors:
+      name: "BMS Disable Temperature Sensors"
+      icon: "mdi:thermometer-off"
+    display_always_on:
+      name: "BMS Display Always On"
+      icon: "mdi:monitor"
+      # Éteint par défaut : l'écran reste allumé en permanence sur le BMS,
+      # ce qui tire sur la batterie du pack pour rien.
+      restore_mode: DISABLED
+    smart_sleep:
+      name: "BMS Smart Sleep"
+      icon: "mdi:sleep"
+    disable_pcl_module:
+      name: "BMS Disable PCL Module"
+      icon: "mdi:power-plug-off"
+    timed_stored_data:
+      name: "BMS Timed Stored Data"
+      icon: "mdi:database-clock"
+    charging_float_mode:
+      name: "BMS Charging Float Mode"
+      icon: "mdi:battery-charging-high"
+
+# =============================================================================
+#  SELECT — listes déroulantes du BMS
+# =============================================================================
+select:
+  - platform: jk_bms_ble
+    jk_bms_ble_id: bms0
+    multiplexed_port_mode:
+      name: "BMS Multiplexed Port Mode"
+      icon: "mdi:swap-horizontal"
+    load_config_preset:
+      name: "BMS Load Config Preset"
+      icon: "mdi:content-save-cog"
+
+# =============================================================================
+#  BUTTONS
+# =============================================================================
+# Volontairement SANS shutdown / restart / factory_reset : trop dangereux
+# à portée d'un dashboard.
+button:
+  - platform: jk_bms_ble
+    jk_bms_ble_id: bms0
+    retrieve_settings:
+      name: "BMS Retrieve Settings"
+      icon: "mdi:refresh"
+    retrieve_device_info:
+      name: "BMS Retrieve Device Info"
+      icon: "mdi:information-outline"
+    retrieve_logbook:
+      name: "BMS Retrieve Logbook"
+      icon: "mdi:book-open-variant"
+
+# =============================================================================
+#  TEXT SENSORS — identification du BMS
+# =============================================================================
+text_sensor:
+  - platform: jk_bms_ble
+    jk_bms_ble_id: bms0
+    errors:
+      name: "BMS Errors"
+      icon: "mdi:alert-circle"
+    errors_bitmask_hex:
+      name: "BMS Errors Bitmask"
+      icon: "mdi:alert-circle-outline"
+    balancer_status:
+      name: "BMS Balancer Status"
+      icon: "mdi:battery-heart-variant"
+    software_version:
+      name: "BMS Software Version"
+      icon: "mdi:chip"
+    hardware_version:
+      name: "BMS Hardware Version"
+      icon: "mdi:chip"
+    device_model:
+      name: "BMS Device Model"
+      icon: "mdi:battery-outline"
+    manufacturing_date:
+      name: "BMS Manufacturing Date"
+      icon: "mdi:calendar"
+    serial_number:
+      name: "BMS Serial Number"
+      icon: "mdi:barcode"
+    total_runtime_formatted:
+      name: "BMS Total Runtime"
+      icon: "mdi:clock-outline"
+
+  # --- État du mode éco (visible dans le dashboard) --------------------------
+  - platform: template
+    name: "Mode Éco"
+    id: eco_status_text
+    icon: "mdi:leaf"
+    # Valeur poussée à la main par le `on_state` de ha_eco_mode
+    lambda: |-
+      return "";
+
+# =============================================================================
+#  SENSORS
+# =============================================================================
+sensor:
+  # --- GPS (relais publics depuis les capteurs internes) --------------------
+  - platform: template
+    name: "Van Latitude"
+    id: public_lat
+    accuracy_decimals: 6
+    icon: "mdi:latitude"
+
+  - platform: template
+    name: "Van Longitude"
+    id: public_lon
+    accuracy_decimals: 6
+    icon: "mdi:longitude"
+
+  - platform: template
+    name: "Van Altitude"
+    id: public_alt
+    unit_of_measurement: "m"
+    accuracy_decimals: 1
+    icon: "mdi:altimeter"
+
+  - platform: template
+    name: "Van Speed"
+    id: public_speed
+    unit_of_measurement: "km/h"
+    accuracy_decimals: 1
+    icon: "mdi:speedometer"
+
+  - platform: template
+    name: "GPS Satellites"
+    id: public_sats
+    accuracy_decimals: 0
+    icon: "mdi:satellite-variant"
+
+  - platform: template
+    name: "GPS HDOP"
+    id: public_hdop
+    accuracy_decimals: 2
+    icon: "mdi:crosshairs-gps"
+
+  - platform: template
+    name: "GPS Direction"
+    id: public_course
+    unit_of_measurement: "°"
+    accuracy_decimals: 0
+    icon: "mdi:compass"
+
+  # --- GPS : diagnostic ----------------------------------------------------
+  - platform: uptime
+    name: "GPS Uptime"
+    icon: "mdi:clock-outline"
+
+  - platform: wifi_signal
+    name: "GPS WiFi Signal"
+    id: wifi_signal_sensor
+    icon: "mdi:wifi"
+    update_interval: 10s
+
+  # Mémoire libre via le composant natif `debug` : `ESP.getFreeHeap()`
+  # n'existe que sous Arduino et ne compile pas sous esp-idf.
+  - platform: debug
+    free:
+      name: "GPS Free Heap"
+      id: free_heap_sensor
+      icon: "mdi:memory"
+      unit_of_measurement: "kB"
+      filters:
+        - lambda: return x / 1024.0;
+
+  # --- JK BMS : valeurs principales ---------------------------------------
+  # Sélection volontairement courte (voir syssi/esphome-jk-bms#63 : activer
+  # tous les capteurs d'un coup peut faire déborder la pile).
+  - platform: jk_bms_ble
+    jk_bms_ble_id: bms0
+
+    total_voltage:
+      name: "BMS Total Voltage"
+      id: bms_total_voltage
+      icon: "mdi:flash"
+    current:
+      name: "BMS Current"
+      id: bms_current
+      icon: "mdi:current-dc"
+    power:
+      name: "BMS Power"
+      icon: "mdi:flash-outline"
+    state_of_charge:
+      name: "BMS State of Charge"
+      id: bms_soc
+      icon: "mdi:battery-70"
+    capacity_remaining:
+      name: "BMS Capacity Remaining"
+      icon: "mdi:battery-outline"
+    full_charge_capacity:
+      name: "BMS Full Charge Capacity"
+      icon: "mdi:battery"
+
+    # Équilibrage des cellules — c'est ce qui indique un déséquilibre
+    min_cell_voltage:
+      name: "BMS Min Cell Voltage"
+      icon: "mdi:battery-low"
+    max_cell_voltage:
+      name: "BMS Max Cell Voltage"
+      icon: "mdi:battery-high"
+    delta_cell_voltage:
+      name: "BMS Delta Cell Voltage"
+      icon: "mdi:delta"
+    average_cell_voltage:
+      name: "BMS Average Cell Voltage"
+      icon: "mdi:battery-sync"
+
+    # Températures
+    temperature_sensor_1:
+      name: "BMS Temperature 1"
+      icon: "mdi:thermometer"
+    temperature_sensor_2:
+      name: "BMS Temperature 2"
+      icon: "mdi:thermometer"
+    mosfet_temperature:
+      name: "BMS MOSFET Temperature"
+      icon: "mdi:thermometer-lines"
+
+    balancing_current:
+      name: "BMS Balancing Current"
+      icon: "mdi:battery-heart-variant"
+
+    # Compteurs
+    charging_cycles:
+      name: "BMS Charging Cycles"
+      icon: "mdi:counter"
+    total_charging_cycle_capacity:
+      name: "BMS Total Cycle Capacity"
+      icon: "mdi:counter"
+    total_runtime:
+      name: "BMS Total Runtime Hours"
+      icon: "mdi:clock-outline"
+
+  # --- JK BMS : tensions de cellule (pack 8S) --------------------------------
+  # Réglé pour 8 cellules. Si vous ajoutez/supprimez des cellules, ajustez ici
+  # et dans le dashboard.
+  # Hors stack : 8 capteurs ne posent aucun problème (la pile est de toute
+  # façon montée à 8192 octets en haut de ce fichier — voir issue #63).
+  - platform: jk_bms_ble
+    jk_bms_ble_id: bms0
+    cell_voltage_1:  {name: "BMS Cell Voltage 1",  icon: "mdi:battery-outline"}
+    cell_voltage_2:  {name: "BMS Cell Voltage 2",  icon: "mdi:battery-outline"}
+    cell_voltage_3:  {name: "BMS Cell Voltage 3",  icon: "mdi:battery-outline"}
+    cell_voltage_4:  {name: "BMS Cell Voltage 4",  icon: "mdi:battery-outline"}
+    cell_voltage_5:  {name: "BMS Cell Voltage 5",  icon: "mdi:battery-outline"}
+    cell_voltage_6:  {name: "BMS Cell Voltage 6",  icon: "mdi:battery-outline"}
+    cell_voltage_7:  {name: "BMS Cell Voltage 7",  icon: "mdi:battery-outline"}
+    cell_voltage_8:  {name: "BMS Cell Voltage 8",  icon: "mdi:battery-outline"}
+
+# =============================================================================
+#  LOGIQUE D'ENVOI GPS (throttle dynamique)
+# =============================================================================
+interval:
+  - interval: 1s
+    then:
+      - lambda: |-
+          // GPS hors tension (mode éco ou interrupteur HA) : on ne publie rien.
+          if (!id(gps_power_switch).state) return;
+
+          if (std::isnan(id(int_lat).state)) return;
+          if (std::isnan(id(int_lon).state)) return;
+
+          // Garde qualité : jette les fixes pourris (c'est eux qui font les
+          // grandes lignes droites à 200 m sur la carte Traccar).
+          // HDOP > 2.5 ou moins de 4 satellites = position inexploitable.
+          if (!std::isnan(id(int_hdop).state) && id(int_hdop).state > 2.5f) return;
+          if (!std::isnan(id(int_sats).state) && id(int_sats).state < 4.0f) return;
+
+          float speed = std::isnan(id(int_speed).state) ? 0.0f : id(int_speed).state;
+
+          // Distance depuis la dernière position publiée (haversine, mètres).
+          float dist_m = NAN;
+          if (!std::isnan(id(last_pub_lat)) && !std::isnan(id(last_pub_lon))) {
+            float lat1 = id(last_pub_lat) * 0.01745329252f;
+            float lat2 = id(int_lat).state * 0.01745329252f;
+            float dlat = lat2 - lat1;
+            float dlon = (id(int_lon).state - id(last_pub_lon)) * 0.01745329252f;
+            float a = sinf(dlat * 0.5f) * sinf(dlat * 0.5f)
+                    + cosf(lat1) * cosf(lat2) * sinf(dlon * 0.5f) * sinf(dlon * 0.5f);
+            dist_m = 2.0f * 6371000.0f * asinf(sqrtf(a));
+          }
+
+          uint32_t now_ms = esphome::millis();
+          uint32_t min_interval;
+
+          if (id(debug_mode)) {
+            // Debug : 1 s, pas de throttling
+            min_interval = 1000;
+          } else if (speed > 4.0f && (std::isnan(dist_m) || dist_m >= 10.0f)) {
+            // EN MOUVEMENT : suivi quasi instantané.
+            // Double condition vitesse + distance : une vitesse fantôme du
+            // Neo-6M à l'arrêt (3-5 km/h) ne déplace pas la position de 10 m,
+            // donc elle retombe dans la branche arrêt ci-dessous.
+            // `gps_interval` = cadence en mouvement, réglable dans HA
+            // (défaut 3 s).
+            min_interval = (uint32_t) (id(gps_interval).state * 1000);
+          } else {
+            // À L'ARRÊT : heartbeat fixe toutes les 15 min, rien d'autre.
+            // Première position après un fix : on publie toujours.
+            if (std::isnan(dist_m)) {
+              min_interval = (uint32_t) (id(gps_interval).state * 1000);
+            } else if (dist_m < 25.0f) {
+              // Jitter autour du point : silence radio sauf heartbeat.
+              if (now_ms - id(last_gps_update) < 900000) return;  // 15 min
+              min_interval = 900000;
+            } else {
+              // > 25 m parcourus à vitesse faible (poussée à la main,
+              // remorquage, sortie de parking au pas) : on publie, au
+              // maximum toutes les 60 s.
+              min_interval = 60000;
+            }
+            // Mode éco : on force au moins 60 s entre deux publications
+            if (id(ha_eco_mode).state && min_interval < 60000) {
+              min_interval = 60000;
+            }
+          }
+
+          // `esphome::` explicite : le composant GPS tire aussi un `millis()`
+          // global (TinyGPS++), d'où un appel ambigu sous esp-idf.
+          if (now_ms - id(last_gps_update) < min_interval) return;
+
+          if (!std::isnan(id(int_lat).state))   id(public_lat).publish_state(id(int_lat).state);
+          if (!std::isnan(id(int_lon).state))   id(public_lon).publish_state(id(int_lon).state);
+          if (!std::isnan(id(int_alt).state))   id(public_alt).publish_state(id(int_alt).state);
+          if (!std::isnan(id(int_speed).state)) id(public_speed).publish_state(id(int_speed).state);
+          if (!std::isnan(id(int_sats).state))  id(public_sats).publish_state(id(int_sats).state);
+          if (!std::isnan(id(int_hdop).state))  id(public_hdop).publish_state(id(int_hdop).state);
+          if (!std::isnan(id(int_course).state)) id(public_course).publish_state(id(int_course).state);
+
+          id(last_pub_lat) = id(int_lat).state;
+          id(last_pub_lon) = id(int_lon).state;
+          id(last_gps_update) = esphome::millis();

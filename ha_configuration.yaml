@@ -1,15 +1,57 @@
-# ---------------------------------------------------------
-# GPS Van Tracker — Entités à ajouter dans configuration.yaml
-# de Home Assistant
-# ---------------------------------------------------------
+# =============================================================================
+#  GPS + JK BMS Van — entités Home Assistant à ajouter à configuration.yaml
+# =============================================================================
+#  Le bloc `input_boolean` est indispensable : il est lu au boot par l'ESP32
+#  (plateforme `homeassistant` dans gps+jkbms.yaml).
+#
+#  Le reste (Traccar) est dans traccar.yaml.
+#
+#  Note : l'ancien `input_boolean.mode_veille_gps_van` a DISPARU.
+#  La version fusionnée n'a plus de deep sleep, donc plus de mode veille.
+#  Il est remplacé par `mode_eco_gps_van`, qui coupe VRAIMENT l'alimentation
+#  du GPS (via un MOSFET sur GPIO25) et déconnecte le BLE du BMS.
+#
+#  Tous les autres réglages (intervalle de publication GPS, écran du BMS,
+#  charge/décharge, équilibrage...) sont des entités ESPHome natives : elles
+#  apparaissent automatiquement dans HA, aucun `input_*` n'est nécessaire.
+# =============================================================================
 
-# Input boolean pour controler le mode veille du GPS
 input_boolean:
-  mode_veille_gps_van:
-    name: "Mode Veille GPS Van"
-    icon: mdi:sleep
-
-# Input boolean pour activer le mode debug du GPS
+  # Mode debug : GPS publié toutes les secondes + logs verbeux côté ESPHome
   debug_mode_gps_van:
     name: "Debug Mode GPS Van"
     icon: mdi:bug
+
+  # Mode éco : coupe l'alimentation du module GPS (GPIO25) et la connexion
+  # BLE du BMS. Le module reste alimenté sur le 5 V, mais il ne consomme plus
+  # que le WiFi. Repasser sur OFF le rallume (~30 s pour retrouver un fix GPS).
+  mode_eco_gps_van:
+    name: "Mode Éco GPS Van"
+    icon: mdi:leaf
+
+# =============================================================================
+#  DEVICE TRACKER (pour la carte du dashboard)
+# =============================================================================
+#  ESPHome ne crée jamais de `device_tracker.*` tout seul, et l'ancien projet
+#  GPS pointait sur `device_tracker.gps` — une entité qui n'existait pas, donc
+#  une carte vide.
+#
+#  Ce template fabrique un vrai `device_tracker.van` à partir des capteurs de
+#  latitude/longitude. C'est lui que la carte `map` du dashboard utilise.
+#
+#  Si vous installez AUSSI l'intégration Traccar dans Home Assistant, celle-ci
+#  créera son propre `device_tracker` : vous pouvez alors commenter ce bloc.
+# =============================================================================
+template:
+  - device_tracker:
+      - name: "Van"
+        unique_id: van_gps_tracker
+        source_type: gps
+        # Pas de fix GPS → on considère le van « à la maison ».
+        # (valeur arbitraire : seule la position compte pour la carte)
+        state: >-
+          {{ 'home' if is_state('binary_sensor.gps_jkbms_gps_status', 'off')
+             else 'not_home' }}
+        latitude: "{{ states('sensor.gps_jkbms_van_latitude') | float(none) }}"
+        longitude: "{{ states('sensor.gps_jkbms_van_longitude') | float(none) }}"
+
