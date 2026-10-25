@@ -39,7 +39,7 @@ esphome:
   comment: "GPS Neo-6M + JK BMS V11H sur un seul ESP32"
   project:
     name: "julie.gps-jkbms"
-    version: "1.0.2"
+    version: "1.0.3"
   # Un seul job de compilation à la fois (voir commentaire ci-dessous).
   compile_process_limit: 1
 
@@ -299,6 +299,18 @@ globals:
   # deplace et que le GPS reste coherent sur la nouvelle position).
   - id: rej_cnt
     type: uint8_t
+    initial_value: '0'
+  # --- 1.0.3 : sortie de secours anti-ancre-figee ---------------------------
+  # Le 2026-10-22 une salve de points faux a depose l'ancre a ~180 m du van.
+  # La garde anti-contamination (> 100 m) bloquait ensuite toute correction :
+  # le van est reste fige au mauvais endroit pendant 3 jours.
+  # far_cnt / far_since comptent les echantillons consecutifs de BONNE
+  # qualite mais loin de l'ancre : c'est la signature d'une ancre perimee.
+  - id: far_cnt
+    type: uint16_t
+    initial_value: '0'
+  - id: far_since
+    type: uint32_t
     initial_value: '0'
 
 # =============================================================================
@@ -909,7 +921,36 @@ interval:
           // (mesure 2026-10-19 : sauts de 309 m, 68 m, 51 m, 61 m). Sans ce
           // test, la convergence de 5 % le laisserait deplacer l'ancre de
           // ~15 m et polluerait la position publiee pendant des minutes.
-          if (anchor_dist > 100.0f && id(move_hits) < 3) return;
+          //
+          // 1.0.3 : cette garde ne doit JAMAIS etre definitive. Si tous les
+          // releves de bonne qualite s'accordent loin de l'ancre, c'est
+          // l'ANCRE qui est fausse, pas les mesures. Deux sorties :
+          //   - van reellement en route (mediane >= 3 km/h, 5 echantillons)
+          //   - van a l'arret mais position stable ailleurs depuis 10 min
+          //     (deplacement a l'arret du GPS, ou ancre corrompue)
+          // Sans ca : deadlock definitif, constate les 22-25 oct 2026.
+          if (anchor_dist > 100.0f) {
+            if (id(far_cnt) == 0) id(far_since) = now_ms;
+            if (id(far_cnt) < 65000) id(far_cnt)++;
+
+            bool real_move = (speed >= 3.0f && id(far_cnt) >= 5);
+            bool stale_anchor = (now_ms - id(far_since) >= 600000);
+
+            if (real_move || stale_anchor) {
+              // On abandonne l'ancre : la mesure courante devient la reference.
+              id(anchor_lat) = lat;
+              id(anchor_lon) = lon;
+              id(move_hits) = 0;
+              id(rej_cnt) = 0;
+              id(far_cnt) = 0;
+              id(last_pub_lat) = NAN;
+              id(last_pub_lon) = NAN;
+            } else {
+              return;  // saut isole : echantillon ignore
+            }
+          } else {
+            id(far_cnt) = 0;
+          }
 
           // ------------------------------------------------------------------
           // 4. MOUVEMENT = CONFIRME PAR LA DISTANCE, PAS PAR LA VITESSE
