@@ -39,7 +39,7 @@ esphome:
   comment: "GPS Neo-6M + JK BMS V11H sur un seul ESP32"
   project:
     name: "julie.gps-jkbms"
-    version: "1.0.3"
+    version: "1.0.4"
   # Un seul job de compilation à la fois (voir commentaire ci-dessous).
   compile_process_limit: 1
 
@@ -310,6 +310,110 @@ globals:
     type: uint16_t
     initial_value: '0'
   - id: far_since
+    type: uint32_t
+    initial_value: '0'
+
+  # --- 1.0.4 : indexer le filtrage sur les TRAMES, pas sur les ticks --------
+  # Le composant gps publie une trame toutes les 5 s, mais le lambda tournait
+  # toutes les 1 s : chaque mesure etait donc reevaluee 5 fois de suite.
+  # Consequences mesurees le 26-27 oct (van immobile, jusqu'a 228 m de derive) :
+  #   - move_hits atteignait 3 en 3 s sur UNE SEULE mesure fausse -> mouvement
+  #     confirme a tort, ancre ecrasee sur le point fantome, publie aussitot ;
+  #   - la mediane de vitesse portait sur 5 copies de la meme valeur, donc
+  #     aucun filtrage : 16-21 km/h affiches alors que le van dormait ;
+  #   - stale_anchor comparait maintenant a far_since en ticks de 1 s.
+  # On ignore desormais toute execution sans nouvelle trame GPS.
+  - id: last_frame_lat
+    type: float
+    initial_value: 'NAN'
+  - id: last_frame_lon
+    type: float
+    initial_value: 'NAN'
+  - id: last_frame_spd
+    type: float
+    initial_value: 'NAN'
+  # 1.0.4 : reference du cluster "loin de l'ancre". Sert a exiger que les
+  # releves lointains soient CONCORDANTS avant d'abandonner l'ancre, et pas
+  # seulement nombreux : un GPS qui part en vrille sort des points disperses,
+  # un van reellement deplace sort des points groupes.
+  - id: far_ref_lat
+    type: float
+    initial_value: 'NAN'
+  - id: far_ref_lon
+    type: float
+    initial_value: 'NAN'
+  # 1.0.4 : derniere trame acceptee. Sert de reference pour verifier qu'un
+  # deplacement est PLAUSIBLE a la vitesse mesuree. C'est ce qui bloque les
+  # salves fantomes qui faisaient "marcher" l'ancre par bonds de 40-120 m
+  # (chaque bond passait sous le seuil anti-teleport de 120 m).
+  - id: prev_lat
+    type: float
+    initial_value: 'NAN'
+  - id: prev_lon
+    type: float
+    initial_value: 'NAN'
+  # 1.0.4 : rejets consecutifs de la coherence cinematique. Sortie de secours
+  # si le van est reellement deplace sans avoir roule (ferry, depanneuse) :
+  # au bout de 6 rejets (30 s) on accepte la nouvelle position comme reference.
+  - id: kin_rej
+    type: uint8_t
+    initial_value: '0'
+  # 1.0.4 : derniere trame qui CONFIRMAIT l'ancre (<= 15 m). C'est le
+  # discriminant decisif entre un van deplace et du multipath :
+  #   - van reellement deplace  -> plus AUCUNE trame pres de l'ancre ;
+  #   - multipath / derive GPS  -> alterne encore des trames pres de l'ancre.
+  # La sortie de secours "ancre perimee" ne peut donc se declencher que si
+  # l'ancre n'a plus ete confirmee depuis 30 min (et non pas "on est loin
+  # depuis 30 min", ce qui laissait adopter un cluster fantome stable).
+  - id: anchor_ok_ms
+    type: uint32_t
+    initial_value: '0'
+  # 1.0.4 : historique glissant des dernieres trames acceptees (9 trames =
+  # 45 s a 0,2 Hz). A l'arret la position publiee est la MEDIANE de ce
+  # tampon, plus une moyenne exponentielle. Raison mesuree les 26-27 oct :
+  # 125 des 162 trames tombaient dans un rayon de 10 m, mais 10 tombaient
+  # dans un cluster multipath stable a 42 m. Une EMA (alpha 0,05) se laisse
+  # tirer par ces 10 points et derive jusqu'a 44 m ; une mediane sur 9 est
+  # insensible a 4 valeurs aberrantes et ne peut PAS quitter le cluster
+  # majoritaire.
+  - id: hist_lat
+    type: float[9]
+    initial_value: '{NAN, NAN, NAN, NAN, NAN, NAN, NAN, NAN, NAN}'
+  - id: hist_lon
+    type: float[9]
+    initial_value: '{NAN, NAN, NAN, NAN, NAN, NAN, NAN, NAN, NAN}'
+  - id: hist_idx
+    type: uint8_t
+    initial_value: '0'
+  - id: hist_cnt
+    type: uint8_t
+    initial_value: '0'
+  # 1.0.4 : horodatage du premier echantillon du mouvement en cours.
+  # Discriminant le plus net mesure les 26-27 oct : les 13 salves fantomes
+  # durent 1 a 4 trames (5 a 20 s), jamais plus ; un van qui part vraiment
+  # roule plusieurs minutes. On exige donc 60 s de mouvement SOUTENU avant
+  # de declarer "moving", ce qui elimine 100 % des salves observees sans
+  # jamais retarder un vrai depart de plus d'une minute.
+  - id: move_since
+    type: uint32_t
+    initial_value: '0'
+  # 1.0.4 : position au debut du mouvement en cours. Sert au test physique
+  # decisif : a >=3 km/h pendant 60 s, un vehicule parcourt forcement >=50 m.
+  # Le multipath, lui, oscille autour du meme point : le deplacement mesure
+  # depuis move_since reste petit alors que la vitesse affichee est elevee
+  # (pics a 15-20 km/h observes a l'arret les 26-27 oct).
+  - id: move_start_lat
+    type: float
+    initial_value: 'NAN'
+  - id: move_start_lon
+    type: float
+    initial_value: 'NAN'
+  # 1.0.4 : horodatage de la derniere trame de mouvement. Un mouvement reel
+  # produit des trames CONTINUES (une toutes les 5 s). Une salve fantome est
+  # un burst de 3-4 trames puis plus rien pendant des heures : sans ce test,
+  # move_since restait arme entre deux salves et le compteur 60 s finissait
+  # par etre satisfait par accumulation (faux point a 97 m observe en sim).
+  - id: last_move_ms
     type: uint32_t
     initial_value: '0'
 
@@ -857,14 +961,27 @@ interval:
           float lon = id(int_lon).state;
           uint32_t now_ms = esphome::millis();
 
+          // 1.0.4 : une seule evaluation par trame GPS (1 toutes les 5 s).
+          // Sans ca, la meme mesure etait comptee 5 fois : move_hits montait
+          // a 3 sur un unique point faux et la mediane de vitesse ne filtrait
+          // plus rien puisqu'elle comparait 5 copies identiques.
+          // La vitesse brute fait partie de la signature pour ne jamais
+          // confondre deux trames successives (sinon le heartbeat de 15 min
+          // serait bloque quand le GPS sort des coordonnees identiques).
+          float raw_spd = std::isnan(id(int_speed).state) ? 0.0f : id(int_speed).state;
+          if (lat == id(last_frame_lat) && lon == id(last_frame_lon)
+              && raw_spd == id(last_frame_spd)) return;
+          id(last_frame_lat) = lat;
+          id(last_frame_lon) = lon;
+          id(last_frame_spd) = raw_spd;
+
           // ------------------------------------------------------------------
           // 1. VITESSE LISSEE (mediane glissante sur 5 echantillons)
           // ------------------------------------------------------------------
           // Mesure du 2026-10-19 sur van immobile : 117/191 echantillons
           // au-dessus de 4 km/h, mediane 4,7 km/h, max 31,5 km/h.
-          // Une mediane sur 5 tue ces pics sans retarder un vrai demarrage
-          // (5 echantillons = 5 s a 1 Hz cote composant GPS).
-          float raw_spd = std::isnan(id(int_speed).state) ? 0.0f : id(int_speed).state;
+          // Une mediane sur 5 trames tue ces pics sans retarder un vrai
+          // demarrage (5 trames = 25 s a 0,2 Hz cote composant GPS).
           for (int i = 4; i > 0; i--) id(spd_buf)[i] = id(spd_buf)[i - 1];
           id(spd_buf)[0] = raw_spd;
           if (id(spd_cnt) < 5) id(spd_cnt)++;
@@ -890,6 +1007,12 @@ interval:
           float hdop = id(int_hdop).state;
           float sats = id(int_sats).state;
           bool bad_fix = false;
+          // 1.0.4 : NaN n'est PAS un signe de bonne qualite. Le 27 oct les
+          // salves les plus pourries (jusqu'a 228 m de derive) arrivaient
+          // precisement avec hdop et sats a NaN : les deux tests ci-dessous
+          // etaient sautes et le point passait. Un GPS qui ne sait plus
+          // remplir hdop/sats n'a pas de fix exploitable.
+          if (std::isnan(hdop) || std::isnan(sats)) bad_fix = true;
           if (!std::isnan(hdop) && hdop > 1.5f) bad_fix = true;
           if (!std::isnan(sats) && sats < 6.0f) bad_fix = true;
           if (bad_fix && id(move_hits) < 3 && !id(debug_mode)) return;
@@ -899,8 +1022,10 @@ interval:
           // ------------------------------------------------------------------
           if (std::isnan(id(anchor_lat)) || std::isnan(id(anchor_lon))) {
             id(anchor_lat) = lat;
+            id(anchor_ok_ms) = now_ms;
             id(anchor_lon) = lon;
             id(move_hits) = 0;
+            id(move_since) = 0;
           }
 
           // Distance a l'ancre (haversine, metres).
@@ -930,26 +1055,79 @@ interval:
           //     (deplacement a l'arret du GPS, ou ancre corrompue)
           // Sans ca : deadlock definitif, constate les 22-25 oct 2026.
           if (anchor_dist > 100.0f) {
-            if (id(far_cnt) == 0) id(far_since) = now_ms;
+            if (id(far_cnt) == 0) {
+              id(far_since) = now_ms;
+              id(far_ref_lat) = lat;
+              id(far_ref_lon) = lon;
+            }
             if (id(far_cnt) < 65000) id(far_cnt)++;
 
-            bool real_move = (speed >= 3.0f && id(far_cnt) >= 5);
-            bool stale_anchor = (now_ms - id(far_since) >= 600000);
+            // 1.0.4 : les releves lointains doivent CONCORDER entre eux.
+            // Mesure du 27 oct : les salves fantomes (jusqu'a 228 m) etaient
+            // dispersees de 30 a 118 m d'un point a l'autre, alors qu'un van
+            // reellement deplace donne des points groupes a quelques metres.
+            // Sans ce test, far_cnt montait sur du bruit et la sortie de
+            // secours adoptait le fantome comme nouvelle ancre.
+            float far_spread = dist_to(id(far_ref_lat), id(far_ref_lon), lat, lon);
+            bool coherent_far = (far_spread <= 10.0f);
+            if (!coherent_far) {
+              // Salve incoherente : on repart de la mesure courante comme
+              // nouvelle reference du cluster et on ne valide rien.
+              id(far_ref_lat) = lat;
+              id(far_ref_lon) = lon;
+              id(far_since) = now_ms;
+              id(far_cnt) = 1;
+              return;
+            }
+
+            bool anchor_never_confirmed = (now_ms - id(anchor_ok_ms) >= 1800000);
+            // 1.0.4 : real_move exigeait seulement 5 trames coherentes + un
+            // pic de vitesse. Or le multipath produit exactement ca : un
+            // cluster serre ET des pics de vitesse a 15 km/h a l'arret
+            // (2 faux points mesures les 26-27 oct, 41 m et 33 m). Un van
+            // qui part vraiment cesse de confirmer l'ancre des le depart :
+            // on exige donc 5 min sans aucune trame pres de l'ancre.
+            bool no_recent_confirm = (now_ms - id(anchor_ok_ms) >= 300000);
+            bool real_move = (speed >= 3.0f && id(far_cnt) >= 5 && no_recent_confirm);
+            // 1.0.4 : la sortie "ancre perimee" exigeait seulement 10 min.
+            // C'etait encore une porte ouverte : un GPS qui derive par petits
+            // pas reste 10 min loin de l'ancre et se fait adopter. Un van
+            // reellement deplace sans rouler (ferry, depanneuse) donne des
+            // trames SERREES (<=10 m) pendant longtemps. On exige donc
+            // 30 min ET 20 trames coherentes.
+            // 1.0.4 (correctif) : on exige EN PLUS que l'ancre n'ait plus ete
+            // confirmee une seule fois depuis 30 min. Mesure des 26-27 oct :
+            // le cluster fantome a 42 m etait present toute la journee, mais
+            // des trames revenaient encore pres de l'ancre -> multipath, pas
+            // deplacement. Sans ce test, ce cluster stable etait adopte.
+            bool stale_anchor = (now_ms - id(far_since) >= 1800000)
+                                && (id(far_cnt) >= 20)
+                                && anchor_never_confirmed;
 
             if (real_move || stale_anchor) {
               // On abandonne l'ancre : la mesure courante devient la reference.
               id(anchor_lat) = lat;
               id(anchor_lon) = lon;
+              id(anchor_ok_ms) = now_ms;
               id(move_hits) = 0;
+              id(move_since) = 0;
               id(rej_cnt) = 0;
               id(far_cnt) = 0;
-              id(last_pub_lat) = NAN;
-              id(last_pub_lon) = NAN;
+              id(far_ref_lat) = NAN;
+              id(far_ref_lon) = NAN;
+              // 1.0.4 : on ne force PLUS last_pub a NAN. C'etait le vecteur
+              // du point fantome : la sortie de secours publiait le saut dans
+              // la seconde, sans garde anti-teleport. L'ancre corrigee sera
+              // publiee au heartbeat ou des que le mouvement sera confirme.
             } else {
               return;  // saut isole : echantillon ignore
             }
           } else {
             id(far_cnt) = 0;
+            id(far_ref_lat) = NAN;
+            id(far_ref_lon) = NAN;
+            // 1.0.4 : l'ancre vient d'etre confirmee par une trame proche.
+            id(anchor_ok_ms) = now_ms;
           }
 
           // ------------------------------------------------------------------
@@ -958,24 +1136,128 @@ interval:
           // 3 echantillons consecutifs a >= 30 m de l'ancre. Un pic de
           // vitesse isole ne suffit plus ; une vraie sortie de parking
           // (au pas, 5 km/h) est detectee au bout de ~15 s.
+          // 1.0.4 : rupture de continuite -> le mouvement repart de zero.
+          if (id(move_hits) > 0 && id(last_move_ms) != 0
+              && (now_ms - id(last_move_ms) > 15000)) {
+            id(move_hits) = 0;
+            id(move_since) = 0;
+          }
           if (anchor_dist >= 30.0f) {
             if (id(move_hits) < 255) id(move_hits)++;
+            id(last_move_ms) = now_ms;
           } else {
             id(move_hits) = 0;
+            id(move_since) = 0;
           }
-          bool moving = (id(move_hits) >= 3);
+          if (id(move_hits) == 1 && id(move_since) == 0) {
+            id(move_since) = now_ms;
+            id(move_start_lat) = lat;
+            id(move_start_lon) = lon;
+          }
+          // 1.0.4 : la distance seule ne suffit plus. Mesure des 26-27 oct :
+          // 3 trames consecutives a 30-41 m suffisaient a declarer "moving"
+          // alors que la vitesse mediane etait a 0 km/h -> 2 faux points
+          // publies en position brute. Un vrai roulage a TOUJOURS une
+          // vitesse > 3 km/h (soit 0,83 m/s, bien au-dessus du bruit du
+          // Neo-6M). On exige donc les deux : distance ET vitesse.
+          // 1.0.4 (correctif) : ET 60 s de mouvement soutenu. Les 13 salves
+          // fantomes mesurees durent 1 a 4 trames (5-20 s) ; un vrai depart
+          // dure des minutes. Ce critere les elimine toutes.
+          bool speed_ok = (speed >= 3.0f);
+          bool sustained = (id(move_since) != 0) && (now_ms - id(move_since) >= 60000);
+          // Test physique : 60 s a >=3 km/h = au moins 50 m parcourus.
+          float travelled = std::isnan(id(move_start_lat))
+                            ? 0.0f
+                            : dist_to(id(move_start_lat), id(move_start_lon), lat, lon);
+          bool really_travelled = (travelled >= 50.0f);
+          bool moving = (id(move_hits) >= 3) && speed_ok && sustained && really_travelled;
+
+          // ------------------------------------------------------------------
+          // 3bis. COHERENCE CINEMATIQUE (1.0.4)
+          // ------------------------------------------------------------------
+          // Un deplacement doit etre compatible avec la vitesse mesuree. Les
+          // salves fantomes du 26-27 oct faisaient avancer l'ancre par bonds
+          // de 40 a 120 m en 10-15 s, soit 1000 a 4000 km/h, tout en restant
+          // sous la garde anti-teleport de 120 m par saut. Le Neo-6M plafonne
+          // a ~1800 km/h : au-dela de 250 km/h + marge, la mesure est fausse.
+          // On exige aussi un mouvement SOUTENU (la meme zone sur 3 trames)
+          // avant d'accepter que l'ancre bouge, ce qui interdit a une salve
+          // unique de deplacer la reference.
+          if (moving) {
+            float jump = dist_to(id(prev_lat), id(prev_lon), lat, lon);
+            bool have_prev = !std::isnan(id(prev_lat));
+            bool too_fast = have_prev && (jump > 300.0f);  // > 300 m entre 2 trames (5 s) = > 216 km/h
+            if (too_fast) {
+              if (id(kin_rej) < 10) id(kin_rej)++;
+              // Sortie de secours : si la position reste la meme pendant
+              // 6 trames (30 s), le van a vraiment ete deplace (ferry,
+              // depanneuse, GPS qui recale). On ne peut pas bloquer a vie.
+              if (id(kin_rej) < 6) {
+                id(move_hits) = 0;
+                id(move_since) = 0;
+                return;
+              }
+              id(prev_lat) = lat;
+              id(prev_lon) = lon;
+              id(kin_rej) = 0;
+            } else {
+              id(kin_rej) = 0;
+            }
+          }
 
           if (moving) {
             // Le van bouge : l'ancre suit la position reelle.
             id(anchor_lat) = lat;
             id(anchor_lon) = lon;
+            id(anchor_ok_ms) = now_ms;
             id(move_hits) = 0;
+            id(move_since) = 0;
           } else {
-            // A l'arret : convergence lente vers le point moyen.
-            // 5 % par echantillon => immunite au jitter, et l'ancre finit
-            // par se poser sur la vraie position.
-            id(anchor_lat) += 0.05f * (lat - id(anchor_lat));
-            id(anchor_lon) += 0.05f * (lon - id(anchor_lon));
+            // A l'arret : on ne publie pas la trame brute, on publie la
+            // MEDIANE des 9 dernieres trames acceptees.
+            // 1.0.4 : remplace l'EMA 5 %. L'EMA etait un moyenneur : elle
+            // se laissait tirer par le cluster multipath a 42 m observe le
+            // 26-27 oct et derivait jusqu'a 44 m du point reel, puis
+            // publiait cette derive a chaque heartbeat. Une mediane sur 9
+            // trames ignore jusqu'a 4 valeurs aberrantes et reste collee
+            // au cluster majoritaire (125 trames / 162 mesurees).
+            // On n'empile que les trames PROCHES de l'ancre : une trame
+            // lointaine ne doit jamais entrer dans l'historique.
+            // 1.0.4 : porte a 12 m et non 30 m. Mesure : avec 30 m, l'ancre
+            // RAMPait — une trame a 15 m etait acceptee, puis une a 27 m,
+            // etc. — et atteignait le cluster multipath a 42 m en quelques
+            // pas. A 12 m elle ne peut plus rejoindre un cluster distant :
+            // 125 des 162 trames reelles sont dans un rayon de 10 m.
+            float a_jit = dist_to(id(anchor_lat), id(anchor_lon), lat, lon);
+            if (a_jit <= 12.0f) {
+              id(hist_lat)[id(hist_idx)] = lat;
+              id(hist_lon)[id(hist_idx)] = lon;
+              id(hist_idx) = (uint8_t) ((id(hist_idx) + 1) % 9);
+              if (id(hist_cnt) < 9) id(hist_cnt)++;
+            }
+            if (id(hist_cnt) >= 3) {
+              float bla[9];
+              float blo[9];
+              uint8_t hn = id(hist_cnt);
+              for (uint8_t i = 0; i < hn; i++) {
+                bla[i] = id(hist_lat)[i];
+                blo[i] = id(hist_lon)[i];
+              }
+              for (uint8_t i = 1; i < hn; i++) {
+                float k = bla[i];
+                float k2 = blo[i];
+                int j = (int) i - 1;
+                while (j >= 0 && bla[j] > k) {
+                  bla[j + 1] = bla[j];
+                  blo[j + 1] = blo[j];
+                  j--;
+                }
+                bla[j + 1] = k;
+                blo[j + 1] = k2;
+              }
+              id(anchor_lat) = bla[hn / 2];
+              id(anchor_lon) = blo[hn / 2];
+            }
           }
 
           // ------------------------------------------------------------------
@@ -1003,6 +1285,11 @@ interval:
           } else {
             id(rej_cnt) = 0;
           }
+
+          // 1.0.4 : memoriser la trame acceptee pour la coherence
+          // cinematique de la prochaine mesure.
+          id(prev_lat) = lat;
+          id(prev_lon) = lon;
 
           // ------------------------------------------------------------------
           // 6. CADENCE DE PUBLICATION
